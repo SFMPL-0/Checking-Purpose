@@ -1,6 +1,0 @@
-{
-  "name": "Freight Profit & Tax Calculator",
-  "description": "Professional freight business profit, interest, expenses, and TDS claim calculator with configurable financial engines, scenarios, and reports.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
