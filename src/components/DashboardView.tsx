@@ -192,35 +192,77 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const entryMode = input.vehicleEntryMode || 'single';
 
   const setEntryMode = (mode: 'single' | 'multiple') => {
-    setInput((prev) => ({
-      ...prev,
-      vehicleEntryMode: mode,
-      vehicles:
-        mode === 'multiple' && (!prev.vehicles || prev.vehicles.length === 0)
-          ? Array.from({ length: 3 }, (_, i) => ({
-              id: 'veh_' + Date.now() + '_' + i,
-              vehicleNumber: '',
-              truckType: '',
-              sellingPricingMethod: 'fixed' as PricingMethod,
-              sellingAmount: 0,
-              buyingPricingMethod: 'fixed' as PricingMethod,
-              buyingAmount: 0,
-            }))
-          : prev.vehicles,
-    }));
+    setInput((prev) => {
+      if (mode === 'multiple') {
+        const hasExisting = prev.vehicles && prev.vehicles.length > 0;
+        const initialVehicles = hasExisting
+          ? prev.vehicles
+          : [
+              {
+                id: 'veh_' + Date.now() + '_0',
+                vehicleNumber: prev.truckNumber || '',
+                truckType: prev.truckType || '',
+                sellingPricingMethod: (prev.sellingPricingMethod || 'fixed') as PricingMethod,
+                sellingAmount: Number(prev.sellingPrice) || 0,
+                buyingPricingMethod: (prev.buyingPricingMethod || 'fixed') as PricingMethod,
+                buyingAmount: Number(prev.buyingPrice) || 0,
+              },
+              {
+                id: 'veh_' + Date.now() + '_1',
+                vehicleNumber: '',
+                truckType: '',
+                sellingPricingMethod: 'fixed' as PricingMethod,
+                sellingAmount: 0,
+                buyingPricingMethod: 'fixed' as PricingMethod,
+                buyingAmount: 0,
+              },
+              {
+                id: 'veh_' + Date.now() + '_2',
+                vehicleNumber: '',
+                truckType: '',
+                sellingPricingMethod: 'fixed' as PricingMethod,
+                sellingAmount: 0,
+                buyingPricingMethod: 'fixed' as PricingMethod,
+                buyingAmount: 0,
+              },
+            ];
+
+        return {
+          ...prev,
+          vehicleEntryMode: 'multiple',
+          vehicles: initialVehicles,
+        };
+      } else {
+        // Switching back to single truck mode
+        const firstVeh = prev.vehicles && prev.vehicles[0];
+        return {
+          ...prev,
+          vehicleEntryMode: 'single',
+          truckNumber: prev.truckNumber || firstVeh?.vehicleNumber || '',
+        };
+      }
+    });
   };
 
   // Multiple Truck Entry: keep sellingPrice/buyingPrice in sync with the sum of all vehicle rows, automatically.
   React.useEffect(() => {
     if (entryMode !== 'multiple') return;
-    const totals = (input.vehicles || []).reduce(
+    if (!input.vehicles || input.vehicles.length === 0) return;
+
+    const totals = input.vehicles.reduce(
       (acc, v) => {
         const { selling, buying } = vehicleAmounts(v);
         return { selling: acc.selling + selling, buying: acc.buying + buying };
       },
       { selling: 0, buying: 0 }
     );
-    if (totals.selling !== input.sellingPrice || totals.buying !== input.buyingPrice) {
+
+    // Only update if there are vehicles with values or amounts changed
+    const hasAnyContent = input.vehicles.some(
+      (v) => (v.vehicleNumber && v.vehicleNumber.trim().length > 0) || Number(v.sellingAmount) > 0 || Number(v.buyingAmount) > 0
+    );
+
+    if (hasAnyContent && (totals.selling !== input.sellingPrice || totals.buying !== input.buyingPrice)) {
       setInput((prev) => ({
         ...prev,
         sellingPrice: totals.selling,

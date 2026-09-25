@@ -245,6 +245,18 @@ function rowToSavedCalculation(row: any): SavedCalculation {
   if (row.from_location && !input.fromLocation) input.fromLocation = row.from_location;
   if (row.to_location && !input.toLocation) input.toLocation = row.to_location;
   if (row.truck_number && !input.truckNumber) input.truckNumber = row.truck_number;
+  if (!input.truckNumber && (row as any).truck_number) input.truckNumber = (row as any).truck_number;
+  if (!input.truckNumber && Array.isArray(input.vehicles) && input.vehicles[0]?.vehicleNumber) {
+    input.truckNumber = input.vehicles[0].vehicleNumber;
+  }
+
+  // Restore SP and BP from calculation result if 0 or missing in input JSON
+  if ((input.sellingPrice === undefined || input.sellingPrice === null || Number(input.sellingPrice) === 0) && row.result?.sellingPrice) {
+    input.sellingPrice = row.result.sellingPrice;
+  }
+  if ((input.buyingPrice === undefined || input.buyingPrice === null || Number(input.buyingPrice) === 0) && row.result?.buyingPrice) {
+    input.buyingPrice = row.result.buyingPrice;
+  }
 
   return {
     id: row.id,
@@ -325,8 +337,18 @@ export async function saveNewCalculation(
   tripNumber?: string,
   notes?: string
 ): Promise<SavedCalculation> {
+  const isMultiple = input.vehicleEntryMode === 'multiple';
+  const cleanInput: CalculationInput = {
+    ...input,
+    vehicleEntryMode: isMultiple ? 'multiple' : 'single',
+    vehicles: isMultiple ? (input.vehicles || []) : [],
+    truckNumber: (input.truckNumber || '').trim().toUpperCase(),
+    sellingPrice: Number(input.sellingPrice) || 0,
+    buyingPrice: Number(input.buyingPrice) || 0,
+  };
+
   const result = calculateFreightProfit(
-    input,
+    cleanInput,
     expenses,
     interestTranches,
     tdsSettings,
@@ -341,9 +363,9 @@ export async function saveNewCalculation(
     name: name.trim() || `Calculation ${new Date().toLocaleDateString()}`,
     createdAt: nowIso,
     updatedAt: nowIso,
-    tripNumber: tripNumber || input.tripNumber || '',
-    notes: notes || input.notes || '',
-    input: JSON.parse(JSON.stringify(input)),
+    tripNumber: tripNumber || cleanInput.tripNumber || '',
+    notes: notes || cleanInput.notes || '',
+    input: cleanInput,
     expenses: JSON.parse(JSON.stringify(expenses)),
     interestTranches: JSON.parse(JSON.stringify(interestTranches)),
     tdsSettings: JSON.parse(JSON.stringify(tdsSettings)),
@@ -352,16 +374,15 @@ export async function saveNewCalculation(
   };
 
   try {
-    const { error } = await supabase.from(TABLES.SAVED_CALCULATIONS).insert({
+    const payload: any = {
       id: newRecord.id,
       name: newRecord.name,
       trip_number: newRecord.tripNumber,
       notes: newRecord.notes,
-      client_name: input.clientName || null,
-      truck_type: input.truckType || null,
-      from_location: input.fromLocation || null,
-      to_location: input.toLocation || null,
-      truck_number: input.truckNumber || null,
+      client_name: cleanInput.clientName || null,
+      truck_type: cleanInput.truckType || null,
+      from_location: cleanInput.fromLocation || null,
+      to_location: cleanInput.toLocation || null,
       input: newRecord.input,
       expenses: newRecord.expenses,
       interest_tranches: newRecord.interestTranches,
@@ -370,7 +391,17 @@ export async function saveNewCalculation(
       result: newRecord.result,
       created_at: newRecord.createdAt,
       updated_at: newRecord.updatedAt,
-    });
+    };
+    if (cleanInput.truckNumber) {
+      payload.truck_number = cleanInput.truckNumber;
+    }
+
+    let { error } = await supabase.from(TABLES.SAVED_CALCULATIONS).insert(payload);
+    if (error && error.message && error.message.includes('truck_number')) {
+      delete payload.truck_number;
+      const retry = await supabase.from(TABLES.SAVED_CALCULATIONS).insert(payload);
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Failed to save calculation to Supabase', error);
@@ -518,6 +549,18 @@ function rowToCalculationHistoryEntry(row: any): CalculationHistoryEntry {
   if (row.truck_type && !input.truckType) input.truckType = row.truck_type;
   if (row.trip_number && !input.tripNumber) input.tripNumber = row.trip_number;
   if (row.truck_number && !input.truckNumber) input.truckNumber = row.truck_number;
+  if (!input.truckNumber && (row as any).truck_number) input.truckNumber = (row as any).truck_number;
+  if (!input.truckNumber && Array.isArray(input.vehicles) && input.vehicles[0]?.vehicleNumber) {
+    input.truckNumber = input.vehicles[0].vehicleNumber;
+  }
+
+  // Restore SP and BP from calculation result or top-level columns if 0 or missing in input JSON
+  if ((input.sellingPrice === undefined || input.sellingPrice === null || Number(input.sellingPrice) === 0)) {
+    input.sellingPrice = row.selling_price ?? row.result?.sellingPrice ?? 0;
+  }
+  if ((input.buyingPrice === undefined || input.buyingPrice === null || Number(input.buyingPrice) === 0)) {
+    input.buyingPrice = row.buying_price ?? row.result?.buyingPrice ?? 0;
+  }
 
   return {
     id: row.id,

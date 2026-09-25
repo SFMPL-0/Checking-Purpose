@@ -257,9 +257,19 @@ export default function App() {
       return;
     }
     try {
+      const isMultiple = input.vehicleEntryMode === 'multiple';
+      const cleanInput: CalculationInput = {
+        ...input,
+        vehicleEntryMode: isMultiple ? 'multiple' : 'single',
+        vehicles: isMultiple ? (input.vehicles || []) : [],
+        truckNumber: (input.truckNumber || '').trim().toUpperCase(),
+        sellingPrice: Number(input.sellingPrice) || 0,
+        buyingPrice: Number(input.buyingPrice) || 0,
+      };
+
       const saved = await saveNewCalculation(
         saveName.trim(),
-        input,
+        cleanInput,
         expenses,
         interestTranches,
         tdsSettings,
@@ -277,22 +287,59 @@ export default function App() {
 
   // Reopen calculation with historic snapshot preservation
   const handleReopenCalculation = (saved: SavedCalculation) => {
+    const isExplicitlyMultiple = saved.input.vehicleEntryMode === 'multiple';
+    const isExplicitlySingle = saved.input.vehicleEntryMode === 'single';
+
+    // It is multiple vehicles ONLY if explicitly marked 'multiple', OR
+    // (for legacy records where vehicleEntryMode was not stored) if it has at least
+    // one vehicle with an actual vehicle number or non-zero price and was NOT saved as single.
     const hasMultipleVehicles =
-      saved.input.vehicleEntryMode === 'multiple' ||
-      (Array.isArray(saved.input.vehicles) && saved.input.vehicles.length > 0);
+      isExplicitlyMultiple ||
+      (!isExplicitlySingle &&
+        Array.isArray(saved.input.vehicles) &&
+        saved.input.vehicles.length > 0 &&
+        saved.input.vehicles.some(
+          (v) =>
+            (v.vehicleNumber && v.vehicleNumber.trim().length > 0) ||
+            Number(v.sellingAmount) > 0 ||
+            Number(v.buyingAmount) > 0
+        ));
+
+    // Restore Truck Number: check input.truckNumber, then row truck_number, then first vehicle row
+    const restoredTruckNumber =
+      saved.input.truckNumber ||
+      (saved as any).truck_number ||
+      (saved as any).truckNumber ||
+      (Array.isArray(saved.input.vehicles) && saved.input.vehicles[0]?.vehicleNumber) ||
+      '';
+
+    // Restore SP and BP: ensure non-zero fallback from result snapshot if input was blank
+    const restoredSellingPrice =
+      Number(saved.input.sellingPrice) > 0
+        ? Number(saved.input.sellingPrice)
+        : Number(saved.result?.sellingPrice) > 0
+        ? Number(saved.result.sellingPrice)
+        : 0;
+
+    const restoredBuyingPrice =
+      Number(saved.input.buyingPrice) > 0
+        ? Number(saved.input.buyingPrice)
+        : Number(saved.result?.buyingPrice) > 0
+        ? Number(saved.result.buyingPrice)
+        : 0;
 
     setInput({
-      sellingPrice: saved.input.sellingPrice,
-      buyingPrice: saved.input.buyingPrice,
-      sellingPricingMethod: saved.input.sellingPricingMethod,
+      sellingPrice: restoredSellingPrice,
+      buyingPrice: restoredBuyingPrice,
+      sellingPricingMethod: saved.input.sellingPricingMethod || 'fixed',
       sellingFreightRate: saved.input.sellingFreightRate,
       sellingPmt: saved.input.sellingPmt,
-      buyingPricingMethod: saved.input.buyingPricingMethod,
+      buyingPricingMethod: saved.input.buyingPricingMethod || 'fixed',
       buyingFreightRate: saved.input.buyingFreightRate,
       buyingPmt: saved.input.buyingPmt,
       vehicleEntryMode: hasMultipleVehicles ? 'multiple' : 'single',
-      vehicles: saved.input.vehicles || [],
-      truckNumber: saved.input.truckNumber || (saved as any).truck_number || '',
+      vehicles: hasMultipleVehicles ? (saved.input.vehicles || []) : [],
+      truckNumber: restoredTruckNumber,
       tripNumber: saved.tripNumber || saved.input.tripNumber || '',
       clientName: saved.input.clientName || (saved as any).client_name || '',
       fromLocation: saved.input.fromLocation || '',
@@ -313,15 +360,49 @@ export default function App() {
 
   // Reopen an auto-logged history entry (unnamed) into the live calculator
   const handleReopenHistoryEntry = (entry: CalculationHistoryEntry) => {
+    const isExplicitlyMultiple = entry.input.vehicleEntryMode === 'multiple';
+    const isExplicitlySingle = entry.input.vehicleEntryMode === 'single';
+
     const hasMultipleVehicles =
-      entry.input.vehicleEntryMode === 'multiple' ||
-      (Array.isArray(entry.input.vehicles) && entry.input.vehicles.length > 0);
+      isExplicitlyMultiple ||
+      (!isExplicitlySingle &&
+        Array.isArray(entry.input.vehicles) &&
+        entry.input.vehicles.length > 0 &&
+        entry.input.vehicles.some(
+          (v) =>
+            (v.vehicleNumber && v.vehicleNumber.trim().length > 0) ||
+            Number(v.sellingAmount) > 0 ||
+            Number(v.buyingAmount) > 0
+        ));
+
+    const restoredTruckNumber =
+      entry.input.truckNumber ||
+      (entry as any).truck_number ||
+      (entry as any).truckNumber ||
+      (Array.isArray(entry.input.vehicles) && entry.input.vehicles[0]?.vehicleNumber) ||
+      '';
+
+    const restoredSellingPrice =
+      Number(entry.input.sellingPrice) > 0
+        ? Number(entry.input.sellingPrice)
+        : Number(entry.result?.sellingPrice) > 0
+        ? Number(entry.result.sellingPrice)
+        : 0;
+
+    const restoredBuyingPrice =
+      Number(entry.input.buyingPrice) > 0
+        ? Number(entry.input.buyingPrice)
+        : Number(entry.result?.buyingPrice) > 0
+        ? Number(entry.result.buyingPrice)
+        : 0;
 
     setInput({
       ...entry.input,
-      vehicleEntryMode: hasMultipleVehicles ? 'multiple' : (entry.input.vehicleEntryMode || 'single'),
-      vehicles: entry.input.vehicles || [],
-      truckNumber: entry.input.truckNumber || (entry as any).truck_number || '',
+      sellingPrice: restoredSellingPrice,
+      buyingPrice: restoredBuyingPrice,
+      vehicleEntryMode: hasMultipleVehicles ? 'multiple' : 'single',
+      vehicles: hasMultipleVehicles ? (entry.input.vehicles || []) : [],
+      truckNumber: restoredTruckNumber,
     });
     setExpenses(entry.expenses);
     setInterestTranches(entry.interestTranches);

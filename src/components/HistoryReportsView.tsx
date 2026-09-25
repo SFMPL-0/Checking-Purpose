@@ -9,6 +9,7 @@ import {
   FileText,
   Filter,
   History,
+  Layers,
   Printer,
   RefreshCw,
   Search,
@@ -409,7 +410,7 @@ export const HistoryReportsView: React.FC<HistoryReportsViewProps> = ({
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-bold text-white">
                           {calc.name}
                         </span>
@@ -418,10 +419,32 @@ export const HistoryReportsView: React.FC<HistoryReportsViewProps> = ({
                             {calc.tripNumber}
                           </span>
                         )}
+                        {(calc.input?.truckNumber || (calc as any).truck_number || (Array.isArray(calc.input?.vehicles) && calc.input.vehicles[0]?.vehicleNumber)) && (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold flex items-center gap-1">
+                            <Truck className="w-3 h-3" />
+                            {calc.input?.truckNumber || (calc as any).truck_number || calc.input.vehicles[0]?.vehicleNumber}
+                          </span>
+                        )}
+                        {calc.input?.vehicleEntryMode === 'multiple' && (
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold flex items-center gap-1">
+                            <Layers className="w-3 h-3" />
+                            {calc.input.vehicles?.length || 0} Trucks
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
-                        <Calendar className="w-3 h-3" />
-                        <span>{new Date(calc.createdAt).toLocaleString()}</span>
+                      <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-500" />
+                          {new Date(calc.createdAt).toLocaleString()}
+                        </span>
+                        {calc.input?.clientName && (
+                          <span className="text-slate-300 font-medium">• Client: {calc.input.clientName}</span>
+                        )}
+                        {(calc.input?.fromLocation || calc.input?.toLocation) && (
+                          <span className="text-slate-400">
+                            • {calc.input.fromLocation || '—'} → {calc.input.toLocation || '—'}
+                          </span>
+                        )}
                         {calc.notes && <span>• {calc.notes}</span>}
                       </div>
                     </div>

@@ -57,6 +57,7 @@ alter table public.saved_calculations add column if not exists client_name text;
 alter table public.saved_calculations add column if not exists truck_type text;
 alter table public.saved_calculations add column if not exists from_location text;
 alter table public.saved_calculations add column if not exists to_location text;
+alter table public.saved_calculations add column if not exists truck_number text;
 
 create index if not exists idx_saved_calculations_created_at
   on public.saved_calculations (created_at desc);

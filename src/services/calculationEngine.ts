@@ -109,6 +109,9 @@ export const DEFAULT_INPUT: CalculationInput = {
   buyingPrice: 45000,
   title: 'Trip Freight Calculation',
   tripNumber: 'TR-001',
+  vehicleEntryMode: 'single',
+  vehicles: [],
+  truckNumber: '',
 };
 
 /**
