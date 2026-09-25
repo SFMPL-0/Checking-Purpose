@@ -5,9 +5,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CalculationGroup,
   CalculationHistoryEntry,
   CalculationInput,
   CalculationResult,
+  CompanyProfile,
   ExpenseItem,
   GeneralSettings,
   InterestTranche,
@@ -39,6 +41,7 @@ import {
   loadDailyGroupSummary,
   logCalculationHistory,
   saveCalculationGroup,
+  saveCompanyProfiles,
   saveCurrentExpenses,
   saveCurrentGeneralSettings,
   saveCurrentInput,
@@ -56,12 +59,13 @@ import {
 import { Navbar } from './components/Navbar';
 import { DashboardView } from './components/DashboardView';
 import { QuickCalcView } from './components/QuickCalcView';
-import { BulkEntryView } from './components/BulkEntryView';
+import { BulkEntryView, InitialBatchData } from './components/BulkEntryView';
 import { CalculationDetailsView } from './components/CalculationDetailsView';
 import { ScenarioView } from './components/ScenarioView';
 import { SettingsView } from './components/SettingsView';
 import { SettingsPasswordGate } from './components/SettingsPasswordGate';
 import { HistoryReportsView } from './components/HistoryReportsView';
+import { CompanyProfilesModal } from './components/CompanyProfilesModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -97,6 +101,13 @@ export default function App() {
     SavedCalculation[]
   >([]);
 
+  // Company Profiles (Clients with individual Engine Settings)
+  const [companyProfiles, setCompanyProfiles] = useState<CompanyProfile[]>([]);
+  const [showCompanyProfilesModal, setShowCompanyProfilesModal] = useState(false);
+
+  // Initial batch state for Multi-Vehicle Entry (when reopened from History/Reports)
+  const [bulkInitialBatch, setBulkInitialBatch] = useState<InitialBatchData | null>(null);
+
   // Core Trip Pricing master data (Client Name / Truck Type / From-To
   // Location suggestion lists) — pure autocomplete lists, not foreign keys.
   const [clients, setClients] = useState<MasterDataItem[]>([]);
@@ -123,6 +134,7 @@ export default function App() {
         setGeneralSettings(state.generalSettings);
         setScenarios(state.scenarios);
         setSavedCalculations(state.savedCalculations);
+        setCompanyProfiles(state.companyProfiles || []);
         setClients(state.clients);
         setTruckTypes(state.truckTypes);
         setLocations(state.locations);
@@ -265,14 +277,32 @@ export default function App() {
 
   // Reopen calculation with historic snapshot preservation
   const handleReopenCalculation = (saved: SavedCalculation) => {
+    const hasMultipleVehicles =
+      saved.input.vehicleEntryMode === 'multiple' ||
+      (Array.isArray(saved.input.vehicles) && saved.input.vehicles.length > 0);
+
     setInput({
       sellingPrice: saved.input.sellingPrice,
       buyingPrice: saved.input.buyingPrice,
-      tripNumber: saved.tripNumber || saved.input.tripNumber,
+      sellingPricingMethod: saved.input.sellingPricingMethod,
+      sellingFreightRate: saved.input.sellingFreightRate,
+      sellingPmt: saved.input.sellingPmt,
+      buyingPricingMethod: saved.input.buyingPricingMethod,
+      buyingFreightRate: saved.input.buyingFreightRate,
+      buyingPmt: saved.input.buyingPmt,
+      vehicleEntryMode: hasMultipleVehicles ? 'multiple' : 'single',
+      vehicles: saved.input.vehicles || [],
+      truckNumber: saved.input.truckNumber || (saved as any).truck_number || '',
+      tripNumber: saved.tripNumber || saved.input.tripNumber || '',
+      clientName: saved.input.clientName || (saved as any).client_name || '',
+      fromLocation: saved.input.fromLocation || '',
+      toLocation: saved.input.toLocation || '',
+      truckType: saved.input.truckType || (saved as any).truck_type || '',
       title: saved.name,
       notes: saved.notes || saved.input.notes,
       customDays: saved.input.customDays,
       customInterestRate: saved.input.customInterestRate,
+      companyProfileId: saved.input.companyProfileId,
     });
     setExpenses(saved.expenses);
     setInterestTranches(saved.interestTranches);
@@ -283,7 +313,16 @@ export default function App() {
 
   // Reopen an auto-logged history entry (unnamed) into the live calculator
   const handleReopenHistoryEntry = (entry: CalculationHistoryEntry) => {
-    setInput(entry.input);
+    const hasMultipleVehicles =
+      entry.input.vehicleEntryMode === 'multiple' ||
+      (Array.isArray(entry.input.vehicles) && entry.input.vehicles.length > 0);
+
+    setInput({
+      ...entry.input,
+      vehicleEntryMode: hasMultipleVehicles ? 'multiple' : (entry.input.vehicleEntryMode || 'single'),
+      vehicles: entry.input.vehicles || [],
+      truckNumber: entry.input.truckNumber || (entry as any).truck_number || '',
+    });
     setExpenses(entry.expenses);
     setInterestTranches(entry.interestTranches);
     setTdsSettings(entry.tdsSettings);
@@ -340,21 +379,63 @@ export default function App() {
     );
   };
 
-  // Reopen a saved vehicle-group's aggregated totals into the live
-  // calculator (e.g. to review/print/export the full breakdown for that day).
-  const handleReopenGroup = (group: {
-    totalSellingPrice: number;
-    totalBuyingPrice: number;
-    groupName: string;
-    expenses: ExpenseItem[];
-    interestTranches: InterestTranche[];
-    tdsSettings: TdsRefundSettings;
-    generalSettings: GeneralSettings;
-  }) => {
+  // Save full calculation snapshot from Bulk Entry View (preserves individual trucks)
+  const handleSaveCalculationSnapshotFromBulk = async (
+    name: string,
+    vehicles: VehicleLineItem[],
+    clientName?: string,
+    groupDate?: string
+  ) => {
+    const totalSelling = vehicles.reduce((s, v) => s + (Number(v.sellingPrice) || 0), 0);
+    const totalBuying = vehicles.reduce((s, v) => s + (Number(v.buyingPrice) || 0), 0);
+    const batchInput: CalculationInput = {
+      sellingPrice: totalSelling,
+      buyingPrice: totalBuying,
+      clientName: clientName || '',
+      vehicleEntryMode: 'multiple',
+      vehicles: vehicles.map((v) => ({
+        id: v.id,
+        vehicleNumber: v.vehicleNumber,
+        sellingPricingMethod: 'fixed',
+        sellingAmount: Number(v.sellingPrice) || 0,
+        buyingPricingMethod: 'fixed',
+        buyingAmount: Number(v.buyingPrice) || 0,
+        notes: v.notes,
+        truckType: v.truckType,
+      })),
+      title: name,
+    };
+    const saved = await saveNewCalculation(
+      name,
+      batchInput,
+      expenses,
+      interestTranches,
+      tdsSettings,
+      generalSettings,
+      `BATCH-${(groupDate || '').replace(/-/g, '')}`,
+      `${vehicles.length} Trucks batch`
+    );
+    setSavedCalculations((prev) => [saved, ...prev]);
+  };
+
+  // Reopen a saved vehicle-group into Dashboard with Multiple Truck Entry mode so user sees ALL trucks!
+  const handleReopenGroup = (group: CalculationGroup) => {
+    const convertedVehicles = (group.vehicles || []).map((v, i) => ({
+      id: v.id || 'veh_' + i,
+      vehicleNumber: v.vehicleNumber || '',
+      truckType: v.truckType || '',
+      sellingPricingMethod: 'fixed' as const,
+      sellingAmount: Number(v.sellingPrice) || 0,
+      buyingPricingMethod: 'fixed' as const,
+      buyingAmount: Number(v.buyingPrice) || 0,
+    }));
+
     setInput({
       sellingPrice: group.totalSellingPrice,
       buyingPrice: group.totalBuyingPrice,
       title: group.groupName,
+      vehicleEntryMode: 'multiple',
+      vehicles: convertedVehicles,
     });
     setExpenses(group.expenses);
     setInterestTranches(group.interestTranches);
@@ -365,6 +446,80 @@ export default function App() {
 
   const handleDeleteGroup = async (id: string) => {
     await deleteCalculationGroup(id);
+  };
+
+  // Company Profile (Client) Handlers
+  const handleSelectCompanyProfile = (profile: CompanyProfile) => {
+    if (profile.expenses && profile.expenses.length > 0) {
+      setExpenses(JSON.parse(JSON.stringify(profile.expenses)));
+    }
+    if (profile.interestTranches && profile.interestTranches.length > 0) {
+      setInterestTranches(JSON.parse(JSON.stringify(profile.interestTranches)));
+    }
+    if (profile.tdsSettings) {
+      setTdsSettings(JSON.parse(JSON.stringify(profile.tdsSettings)));
+    }
+    if (profile.generalSettings) {
+      setGeneralSettings(JSON.parse(JSON.stringify(profile.generalSettings)));
+    }
+    setInput((prev) => ({
+      ...prev,
+      clientName: profile.name,
+      companyProfileId: profile.id,
+      customDays: profile.paymentTermsDays ?? prev.customDays,
+      customInterestRate: profile.interestRate ?? prev.customInterestRate,
+    }));
+  };
+
+  const handleSaveCompanyProfiles = async (updated: CompanyProfile[]) => {
+    setCompanyProfiles(updated);
+    await saveCompanyProfiles(updated);
+    // sync client names
+    for (const cp of updated) {
+      if (!clients.some((c) => c.name.toLowerCase() === cp.name.toLowerCase())) {
+        const added = await addMasterDataItem('clients', cp.name);
+        if (added) {
+          setClients((prev) => [...prev, added]);
+        }
+      }
+    }
+  };
+
+  const handleSaveSingleCompanyProfile = async (profile: CompanyProfile) => {
+    const exists = companyProfiles.some((p) => p.id === profile.id);
+    let updated: CompanyProfile[];
+    if (exists) {
+      updated = companyProfiles.map((p) => (p.id === profile.id ? profile : p));
+    } else {
+      updated = [...companyProfiles, profile];
+    }
+    await handleSaveCompanyProfiles(updated);
+  };
+
+  const handleDeleteSingleCompanyProfile = async (id: string) => {
+    const updated = companyProfiles.filter((p) => p.id !== id);
+    await handleSaveCompanyProfiles(updated);
+  };
+
+  const handleSaveCurrentToCompanyProfile = async (companyIdOrName: string) => {
+    const updated = companyProfiles.map((p) => {
+      if (p.id === companyIdOrName || p.name.toLowerCase() === companyIdOrName.toLowerCase()) {
+        return {
+          ...p,
+          expenses: JSON.parse(JSON.stringify(expenses)),
+          interestTranches: JSON.parse(JSON.stringify(interestTranches)),
+          tdsSettings: JSON.parse(JSON.stringify(tdsSettings)),
+          generalSettings: JSON.parse(JSON.stringify(generalSettings)),
+          paymentTermsDays: input.customDays ?? p.paymentTermsDays,
+          interestRate: input.customInterestRate ?? p.interestRate,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return p;
+    });
+    setCompanyProfiles(updated);
+    await saveCompanyProfiles(updated);
+    alert(`Updated company profile settings with current calculator engine!`);
   };
 
   // Core Trip Pricing: add a new Client/Truck Type/Location suggestion,
@@ -469,6 +624,8 @@ export default function App() {
         netProfitWithTds={result.tdsRefund.netProfitWithTdsSaving}
         pctProfitAfterTds={result.tdsRefund.percentageOfProfitAfterTdsSaving}
         generalSettings={generalSettings}
+        onOpenCompanyProfilesModal={() => setShowCompanyProfilesModal(true)}
+        activeClientName={input.clientName}
       />
 
       {/* Main Content Area */}
@@ -491,6 +648,10 @@ export default function App() {
             truckTypes={truckTypes}
             locations={locations}
             onAddMasterData={handleAddMasterData}
+            companyProfiles={companyProfiles}
+            onSelectCompanyProfile={handleSelectCompanyProfile}
+            onSaveCurrentToCompanyProfile={handleSaveCurrentToCompanyProfile}
+            onOpenCompanyProfilesModal={() => setShowCompanyProfilesModal(true)}
           />
         )}
 
@@ -512,6 +673,11 @@ export default function App() {
             generalSettings={generalSettings}
             onSaveGroup={handleSaveGroup}
             onNavigateTab={setActiveTab}
+            companyProfiles={companyProfiles}
+            onSelectCompanyProfile={handleSelectCompanyProfile}
+            onOpenCompanyProfilesModal={() => setShowCompanyProfilesModal(true)}
+            initialBatch={bulkInitialBatch}
+            onSaveCalculationSnapshot={handleSaveCalculationSnapshotFromBulk}
           />
         )}
 
@@ -650,6 +816,24 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Client Company Profiles & Engine Settings Modal (Global) */}
+      <CompanyProfilesModal
+        isOpen={showCompanyProfilesModal}
+        onClose={() => setShowCompanyProfilesModal(false)}
+        profiles={companyProfiles}
+        activeClientName={input.clientName}
+        onSaveProfile={handleSaveSingleCompanyProfile}
+        onDeleteProfile={handleDeleteSingleCompanyProfile}
+        onApplyProfile={(profile) => {
+          handleSelectCompanyProfile(profile);
+          setShowCompanyProfilesModal(false);
+        }}
+        currentExpenses={expenses}
+        currentInterestTranches={interestTranches}
+        currentTdsSettings={tdsSettings}
+        currentGeneralSettings={generalSettings}
+      />
     </div>
   );
 }

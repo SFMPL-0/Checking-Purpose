@@ -65,13 +65,15 @@ export type PricingMethod = 'fixed' | 'freight_pmt';
 export interface CalculationInput {
   sellingPrice: number;
   buyingPrice: number;
+  truckNumber?: string; // Single Entry: Truck No. / Vehicle No. (e.g. MH12AB1234)
   title?: string;
   tripNumber?: string;
   notes?: string;
   customDays?: number;
   customInterestRate?: number;
-  // Core Trip Pricing — searchable master-data fields (see MasterDataTable)
+  // Core Trip Pricing — searchable master-data / company profile fields
   clientName?: string;
+  companyProfileId?: string;
   fromLocation?: string;
   toLocation?: string;
   truckType?: string;
@@ -224,6 +226,33 @@ export interface ScenarioDefinition {
   notes?: string;
 }
 
+// Company Profile (Client = Company Profile)
+// Each company/client profile can store its own customized Engine Settings
+// (expenses, interest tranches, TDS settings, general settings, and payment terms).
+// When selected in the calculator, its engine settings are automatically applied.
+export interface CompanyProfile {
+  id: string;
+  name: string; // Company / Client Name
+  gstin?: string; // GST Number
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  paymentTermsDays?: number; // e.g. 20, 30, 45, 60 days
+  interestRate?: number; // e.g. 1.0%, 1.5%
+  // Specific Engine Settings configured for this client/company:
+  expenses?: ExpenseItem[];
+  interestTranches?: InterestTranche[];
+  tdsSettings?: TdsRefundSettings;
+  generalSettings?: GeneralSettings;
+  defaultTruckType?: string;
+  defaultFromLocation?: string;
+  defaultToLocation?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // One vehicle/trip's raw selling & buying price inside a multi-vehicle
 // bulk-entry batch (see CalculationGroup below).
 export interface VehicleLineItem {
@@ -231,6 +260,7 @@ export interface VehicleLineItem {
   vehicleNumber: string; // truck no. / LR no. / any label the user wants
   sellingPrice: number;
   buyingPrice: number;
+  truckType?: string;
   notes?: string;
 }
 

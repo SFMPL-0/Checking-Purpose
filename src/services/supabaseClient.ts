@@ -38,4 +38,5 @@ export const APP_STATE_KEYS = {
   TDS: 'current_tds_settings',
   GENERAL: 'current_general_settings',
   SCENARIOS: 'scenarios',
+  COMPANY_PROFILES: 'company_profiles',
 } as const;

@@ -3,8 +3,10 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Building2,
   Calculator,
   Calendar,
+  Check,
   CheckCircle2,
   ChevronRight,
   Copy,
@@ -26,6 +28,7 @@ import {
 import {
   CalculationInput,
   CalculationResult,
+  CompanyProfile,
   ExpenseItem,
   GeneralSettings,
   InterestTranche,
@@ -33,7 +36,6 @@ import {
   MasterDataKind,
   PricingMethod,
   TdsRefundSettings,
-  VehiclePricingEntry,
 } from '../types';
 import { formatCurrency, formatPercent } from '../services/calculationEngine';
 import { SearchableSelect } from './SearchableSelect';
@@ -60,6 +62,10 @@ interface DashboardViewProps {
     kind: MasterDataKind,
     name: string
   ) => Promise<MasterDataItem | null>;
+  companyProfiles?: CompanyProfile[];
+  onSelectCompanyProfile?: (profile: CompanyProfile) => void;
+  onSaveCurrentToCompanyProfile?: (companyNameOrId: string) => void;
+  onOpenCompanyProfilesModal?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -79,6 +85,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   truckTypes,
   locations,
   onAddMasterData,
+  companyProfiles = [],
+  onSelectCompanyProfile,
+  onSaveCurrentToCompanyProfile,
+  onOpenCompanyProfilesModal,
 }) => {
   const [quickDays, setQuickDays] = useState<number>(input.customDays ?? 20);
   const [quickRate, setQuickRate] = useState<number>(
@@ -88,49 +98,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // and show only the final amounts — a clean statement for handing to a
   // client without walking them through how the numbers were derived.
   const [showFormulas, setShowFormulas] = useState(true);
-
-  const entryMode = input.vehicleEntryMode || 'single';
-
-  const setEntryMode = (mode: 'single' | 'multiple') => {
-    setInput((prev) => ({
-      ...prev,
-      vehicleEntryMode: mode,
-      vehicles:
-        mode === 'multiple' && (!prev.vehicles || prev.vehicles.length === 0)
-          ? Array.from({ length: 5 }, (_, i) => ({
-              id: 'veh_' + Date.now() + '_' + i,
-              vehicleNumber: '',
-              truckType: '',
-              sellingPricingMethod: 'fixed' as PricingMethod,
-              sellingAmount: 0,
-              buyingPricingMethod: 'fixed' as PricingMethod,
-              buyingAmount: 0,
-            }))
-          : prev.vehicles,
-    }));
-  };
-
-  // Multiple Entry: keep sellingPrice/buyingPrice (the values the whole app
-  // — Key Financial Summary, calculation engine, Save, Print — actually
-  // reads) in sync with the sum of all vehicle rows, automatically.
-  React.useEffect(() => {
-    if (entryMode !== 'multiple') return;
-    const totals = (input.vehicles || []).reduce(
-      (acc, v) => {
-        const { selling, buying } = vehicleAmounts(v);
-        return { selling: acc.selling + selling, buying: acc.buying + buying };
-      },
-      { selling: 0, buying: 0 }
-    );
-    if (totals.selling !== input.sellingPrice || totals.buying !== input.buyingPrice) {
-      setInput((prev) => ({
-        ...prev,
-        sellingPrice: totals.selling,
-        buyingPrice: totals.buying,
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryMode, input.vehicles]);
+  const [profileSyncNotice, setProfileSyncNotice] = useState<string | null>(null);
 
   // Single Entry: Selling/Buying pricing-method handlers. sellingPrice /
   // buyingPrice stay the canonical amount the rest of the app reads —
@@ -183,7 +151,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       buyingPrice: (p.buyingFreightRate || 0) * pmt,
     }));
 
-
   const handleDaysSlider = (days: number) => {
     setQuickDays(days);
     setInput((prev) => ({ ...prev, customDays: days }));
@@ -205,6 +172,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   };
 
+  const handleSelectClient = (clientName: string) => {
+    setInput((p) => ({ ...p, clientName }));
+    if (!clientName) return;
+    const matchedProfile = companyProfiles.find(
+      (cp) => cp.name.toLowerCase() === clientName.toLowerCase()
+    );
+    if (matchedProfile && onSelectCompanyProfile) {
+      onSelectCompanyProfile(matchedProfile);
+      setProfileSyncNotice(`✓ Applied engine settings for ${matchedProfile.name}`);
+      setTimeout(() => setProfileSyncNotice(null), 3000);
+    }
+  };
+
+  const activeCompanyProfile = companyProfiles.find(
+    (cp) => cp.name.toLowerCase() === (input.clientName || '').toLowerCase()
+  );
+
+  const entryMode = input.vehicleEntryMode || 'single';
+
+  const setEntryMode = (mode: 'single' | 'multiple') => {
+    setInput((prev) => ({
+      ...prev,
+      vehicleEntryMode: mode,
+      vehicles:
+        mode === 'multiple' && (!prev.vehicles || prev.vehicles.length === 0)
+          ? Array.from({ length: 3 }, (_, i) => ({
+              id: 'veh_' + Date.now() + '_' + i,
+              vehicleNumber: '',
+              truckType: '',
+              sellingPricingMethod: 'fixed' as PricingMethod,
+              sellingAmount: 0,
+              buyingPricingMethod: 'fixed' as PricingMethod,
+              buyingAmount: 0,
+            }))
+          : prev.vehicles,
+    }));
+  };
+
+  // Multiple Truck Entry: keep sellingPrice/buyingPrice in sync with the sum of all vehicle rows, automatically.
+  React.useEffect(() => {
+    if (entryMode !== 'multiple') return;
+    const totals = (input.vehicles || []).reduce(
+      (acc, v) => {
+        const { selling, buying } = vehicleAmounts(v);
+        return { selling: acc.selling + selling, buying: acc.buying + buying };
+      },
+      { selling: 0, buying: 0 }
+    );
+    if (totals.selling !== input.sellingPrice || totals.buying !== input.buyingPrice) {
+      setInput((prev) => ({
+        ...prev,
+        sellingPrice: totals.selling,
+        buyingPrice: totals.buying,
+      }));
+    }
+  }, [entryMode, input.vehicles, input.sellingPrice, input.buyingPrice, setInput]);
+
   return (
     <div className="space-y-6 pb-20">
       {/* Top Banner with Quick Actions */}
@@ -213,7 +237,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-400">
               <Truck className="w-4 h-4 text-amber-400" />
-              <span>Freight Profit Analysis • Financial Engine</span>
+              <span>Freight Profit Analysis • Trip Pricing Engine</span>
             </div>
             <h1 className="text-xl md:text-2xl font-bold text-white mt-1">
               {input.clientName ||
@@ -224,11 +248,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h1>
             <p className="text-sm text-slate-400">
               Trip Ref: <span className="text-slate-200 font-mono font-medium">{input.tripNumber || 'TR-001'}</span>
+              {input.truckNumber && (
+                <> • Truck No: <span className="text-amber-400 font-mono font-bold">{input.truckNumber}</span></>
+              )}
               {input.fromLocation && input.toLocation && (
                 <> • Route: <span className="text-slate-200 font-medium">{input.fromLocation} → {input.toLocation}</span></>
               )}
               {input.truckType && (
-                <> • Truck: <span className="text-slate-200 font-medium">{input.truckType}</span></>
+                <> • Truck Type: <span className="text-slate-200 font-medium">{input.truckType}</span></>
               )}
               {' '}• Currency: {generalSettings.currencyCode} ({generalSettings.currencySymbol})
             </p>
@@ -305,26 +332,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-xs text-slate-400">Live Auto-calc</span>
           </div>
 
-          {/* Vehicle Entry Mode Toggle */}
-          <div className="inline-flex bg-slate-950 border border-slate-700 rounded-xl p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setEntryMode('single')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                entryMode === 'single' ? 'bg-amber-500 text-slate-900' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Single Entry
-            </button>
-            <button
-              type="button"
-              onClick={() => setEntryMode('multiple')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                entryMode === 'multiple' ? 'bg-amber-500 text-slate-900' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Multiple Entry
-            </button>
+          {/* Truck Entry Mode Toggle: Single Truck Entry vs Multiple Truck Entry */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-700/60">
+            <div className="inline-flex bg-slate-950 border border-slate-700 rounded-xl p-1 text-xs font-semibold shadow-inner">
+              <button
+                type="button"
+                onClick={() => setEntryMode('single')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  entryMode === 'single'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Truck className="w-3.5 h-3.5" />
+                <span>Single Truck Entry</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEntryMode('multiple')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  entryMode === 'multiple'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Multiple Truck Entry</span>
+                {input.vehicles && input.vehicles.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-900 text-amber-300 text-[10px] font-mono font-bold">
+                    {input.vehicles.length}
+                  </span>
+                )}
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-400">
+              {entryMode === 'single' ? 'Single Vehicle Mode' : 'Multiple Trucks Mode'}
+            </span>
           </div>
 
           <div className="space-y-3">
@@ -354,6 +397,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   onFreightRateChange={updateBuyingFreightRate}
                   onPmtChange={updateBuyingPmt}
                 />
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  {/* Truck Number in Single Entry */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                      <Truck className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Truck No. / Vehicle No.</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={input.truckNumber || ''}
+                      onChange={(e) =>
+                        setInput((p) => ({ ...p, truckNumber: e.target.value.toUpperCase() }))
+                      }
+                      placeholder="e.g. MH12AB1234"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono uppercase focus:border-blue-500 placeholder-slate-500"
+                    />
+                  </div>
+
+                  {/* Truck Type in Single Entry */}
+                  <div>
+                    <SearchableSelect
+                      label="Truck Type"
+                      value={input.truckType || ''}
+                      onChange={(v) => setInput((p) => ({ ...p, truckType: v }))}
+                      options={truckTypes}
+                      onAddNew={(name) => onAddMasterData('truck_types', name)}
+                      placeholder="Search or add truck type…"
+                    />
+                  </div>
+                </div>
               </>
             ) : (
               <MultiVehiclePricingPanel
@@ -365,10 +439,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               />
             )}
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">
-                  Trip / LR No.
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/60">
+              {/* Trip / LR No. */}
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Trip / LR / Order No.
                 </label>
                 <input
                   type="text"
@@ -377,19 +452,97 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     setInput((p) => ({ ...p, tripNumber: e.target.value }))
                   }
                   placeholder="TR-001"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500"
                 />
               </div>
+
+              {/* Title / Batch Name */}
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Trip Title / Label
+                </label>
+                <input
+                  type="text"
+                  value={input.title || ''}
+                  onChange={(e) => setInput((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="e.g. Mumbai Dispatch"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500"
+                />
+              </div>
+
+              {/* Client Name (Company Profile) */}
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Client Name (Company Profile)</span>
+                  </label>
+                  {onOpenCompanyProfilesModal && (
+                    <button
+                      type="button"
+                      onClick={onOpenCompanyProfilesModal}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 underline flex items-center gap-0.5"
+                    >
+                      <span>Manage / Add Clients (+)</span>
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={input.clientName || ''}
+                  onChange={(e) => handleSelectClient(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-blue-500"
+                >
+                  <option value="">-- Select Company Profile (Client) --</option>
+                  {companyProfiles.map((cp) => (
+                    <option key={cp.id} value={cp.name}>
+                      {cp.name} ({cp.paymentTermsDays || 20}d credit, {cp.interestRate || 1}% int, {cp.tdsSettings?.nominalTdsRate || 2}% TDS)
+                    </option>
+                  ))}
+                  {clients
+                    .filter(
+                      (c) =>
+                        !companyProfiles.some(
+                          (cp) => cp.name.toLowerCase() === c.name.toLowerCase()
+                        )
+                    )
+                    .map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
+
+                {/* Profile Engine Status & Sync */}
+                {activeCompanyProfile && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-slate-950/80 border border-amber-500/30 text-[11px] text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div>
+                      <span className="text-amber-400 font-semibold">Engine Applied: </span>
+                      <span>{activeCompanyProfile.paymentTermsDays || 20}d credit • {activeCompanyProfile.interestRate || 1}% interest • {activeCompanyProfile.tdsSettings?.nominalTdsRate || 2}% TDS</span>
+                    </div>
+                    {onSaveCurrentToCompanyProfile && (
+                      <button
+                        type="button"
+                        onClick={() => onSaveCurrentToCompanyProfile(activeCompanyProfile.id)}
+                        className="inline-flex items-center gap-1 text-[10px] text-amber-300 hover:text-amber-200 font-bold bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/40 shrink-0 self-start sm:self-auto"
+                        title="Save any adjustments in Engine Settings back into this client's profile"
+                      >
+                        <Save className="w-3 h-3" />
+                        <span>Update Profile Settings</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+                {profileSyncNotice && (
+                  <div className="mt-1 text-[11px] text-emerald-400 font-semibold">
+                    {profileSyncNotice}
+                  </div>
+                )}
+              </div>
+
+              {/* Locations */}
               <SearchableSelect
-                label="Client Name"
-                value={input.clientName || ''}
-                onChange={(v) => setInput((p) => ({ ...p, clientName: v }))}
-                options={clients}
-                onAddNew={(name) => onAddMasterData('clients', name)}
-                placeholder="Search or add client…"
-              />
-              <SearchableSelect
-                label="From"
+                label="From (Origin)"
                 value={input.fromLocation || ''}
                 onChange={(v) => setInput((p) => ({ ...p, fromLocation: v }))}
                 options={locations}
@@ -397,23 +550,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 placeholder="Origin"
               />
               <SearchableSelect
-                label="To"
+                label="To (Destination)"
                 value={input.toLocation || ''}
                 onChange={(v) => setInput((p) => ({ ...p, toLocation: v }))}
                 options={locations}
                 onAddNew={(name) => onAddMasterData('locations', name)}
                 placeholder="Destination"
               />
-              {entryMode === 'single' && (
-                <SearchableSelect
-                  label="Truck Type"
-                  value={input.truckType || ''}
-                  onChange={(v) => setInput((p) => ({ ...p, truckType: v }))}
-                  options={truckTypes}
-                  onAddNew={(name) => onAddMasterData('truck_types', name)}
-                  placeholder="Search or add truck type…"
-                />
-              )}
             </div>
           </div>
         </div>

@@ -18,6 +18,7 @@ import {
   CalculationHistoryEntry,
   CalculationInput,
   CalculationResult,
+  CompanyProfile,
   DailyGroupSummary,
   ExpenseItem,
   GeneralSettings,
@@ -81,55 +82,156 @@ export interface AppState {
   generalSettings: GeneralSettings;
   scenarios: ScenarioDefinition[];
   savedCalculations: SavedCalculation[];
+  companyProfiles: CompanyProfile[];
   clients: MasterDataItem[];
   truckTypes: MasterDataItem[];
   locations: MasterDataItem[];
 }
 
+function getLocalItem<T>(key: string, fallback: T): T {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function setLocalItem(key: string, value: unknown): void {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch {}
+}
+
 /**
  * Fetches every piece of app state in a handful of parallel round trips
  * (settings, saved calculations, and the three master-data lists) and
- * returns sane defaults for anything missing (e.g. first run against a
- * freshly created Supabase project).
+ * returns sane defaults or local cache for anything missing.
  */
 export async function loadAllAppState(): Promise<AppState> {
-  const [stateResult, savedResult, clients, truckTypes, locations] = await Promise.all([
-    supabase.from(TABLES.APP_STATE).select('key, value'),
-    supabase
-      .from(TABLES.SAVED_CALCULATIONS)
-      .select('*')
-      .order('created_at', { ascending: false }),
-    loadMasterData('clients'),
-    loadMasterData('truck_types'),
-    loadMasterData('locations'),
-  ]);
+  let stateResult: any = { data: null, error: null };
+  let savedResult: any = { data: null, error: null };
+  let clients: MasterDataItem[] = [];
+  let truckTypes: MasterDataItem[] = [];
+  let locations: MasterDataItem[] = [];
 
-  if (stateResult.error) {
-    console.error('Failed to load app_state from Supabase', stateResult.error);
-  }
-  if (savedResult.error) {
-    console.error(
-      'Failed to load saved_calculations from Supabase',
-      savedResult.error
-    );
+  try {
+    const results = await Promise.all([
+      Promise.resolve(supabase.from(TABLES.APP_STATE).select('key, value')).catch((err) => ({ data: null, error: err })),
+      Promise.resolve(
+        supabase
+          .from(TABLES.SAVED_CALCULATIONS)
+          .select('*')
+          .order('created_at', { ascending: false })
+      ).catch((err) => ({ data: null, error: err })),
+      loadMasterData('clients').catch(() => []),
+      loadMasterData('truck_types').catch(() => []),
+      loadMasterData('locations').catch(() => []),
+    ]);
+    stateResult = results[0];
+    savedResult = results[1];
+    clients = results[2];
+    truckTypes = results[3];
+    locations = results[4];
+  } catch (err) {
+    console.warn('Failed to load app state from Supabase, checking local cache', err);
   }
 
   const kv = new Map<string, any>();
-  (stateResult.data || []).forEach((row: any) => kv.set(row.key, row.value));
+  if (stateResult?.data && Array.isArray(stateResult.data)) {
+    stateResult.data.forEach((row: any) => {
+      kv.set(row.key, row.value);
+      setLocalItem(`app_state_${row.key}`, row.value);
+    });
+  }
 
-  const savedCalculations: SavedCalculation[] = (savedResult.data || []).map(
-    rowToSavedCalculation
-  );
+  let savedCalculations: SavedCalculation[] = [];
+  if (savedResult?.data && Array.isArray(savedResult.data)) {
+    savedCalculations = savedResult.data.map(rowToSavedCalculation);
+    setLocalItem('saved_calculations_cache', savedCalculations);
+  } else {
+    savedCalculations = getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
+  }
+
+  if (!clients || clients.length === 0) {
+    clients = getLocalItem<MasterDataItem[]>('master_clients_cache', []);
+  } else {
+    setLocalItem('master_clients_cache', clients);
+  }
+
+  if (!truckTypes || truckTypes.length === 0) {
+    truckTypes = getLocalItem<MasterDataItem[]>('master_truck_types_cache', []);
+  } else {
+    setLocalItem('master_truck_types_cache', truckTypes);
+  }
+
+  if (!locations || locations.length === 0) {
+    locations = getLocalItem<MasterDataItem[]>('master_locations_cache', []);
+  } else {
+    setLocalItem('master_locations_cache', locations);
+  }
+
+  let companyProfiles =
+    kv.get(APP_STATE_KEYS.COMPANY_PROFILES) ??
+    getLocalItem<CompanyProfile[]>('company_profiles_cache', []);
+
+  // Ensure default company profiles exist and sync with master clients
+  if (!companyProfiles || companyProfiles.length === 0) {
+    if (clients && clients.length > 0) {
+      companyProfiles = clients.map((c) => ({
+        id: 'cp_' + c.id,
+        name: c.name,
+        paymentTermsDays: 20,
+        interestRate: 1.0,
+        expenses: DEFAULT_EXPENSES,
+        interestTranches: DEFAULT_INTEREST_TRANCHES,
+        tdsSettings: DEFAULT_TDS_SETTINGS,
+        generalSettings: DEFAULT_GENERAL_SETTINGS,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+    } else {
+      companyProfiles = [
+        {
+          id: 'cp_standard',
+          name: 'Standard Client Profile',
+          paymentTermsDays: 20,
+          interestRate: 1.0,
+          notes: 'Default profile (20-day credit, 1% finance interest, 2% TDS)',
+          expenses: DEFAULT_EXPENSES,
+          interestTranches: DEFAULT_INTEREST_TRANCHES,
+          tdsSettings: DEFAULT_TDS_SETTINGS,
+          generalSettings: DEFAULT_GENERAL_SETTINGS,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+    }
+    setLocalItem('company_profiles_cache', companyProfiles);
+  }
+
+  // Ensure every company profile name is present in master clients list
+  const existingClientNames = new Set(clients.map((c) => c.name.toLowerCase()));
+  companyProfiles.forEach((cp) => {
+    if (!existingClientNames.has(cp.name.toLowerCase())) {
+      clients.push({ id: cp.id, name: cp.name });
+    }
+  });
 
   return {
-    input: kv.get(APP_STATE_KEYS.INPUT) ?? DEFAULT_INPUT,
-    expenses: kv.get(APP_STATE_KEYS.EXPENSES) ?? DEFAULT_EXPENSES,
+    input: kv.get(APP_STATE_KEYS.INPUT) ?? getLocalItem(APP_STATE_KEYS.INPUT, DEFAULT_INPUT),
+    expenses: kv.get(APP_STATE_KEYS.EXPENSES) ?? getLocalItem(APP_STATE_KEYS.EXPENSES, DEFAULT_EXPENSES),
     interestTranches:
-      kv.get(APP_STATE_KEYS.INTEREST) ?? DEFAULT_INTEREST_TRANCHES,
-    tdsSettings: kv.get(APP_STATE_KEYS.TDS) ?? DEFAULT_TDS_SETTINGS,
-    generalSettings: kv.get(APP_STATE_KEYS.GENERAL) ?? DEFAULT_GENERAL_SETTINGS,
-    scenarios: kv.get(APP_STATE_KEYS.SCENARIOS) ?? DEFAULT_SCENARIOS,
+      kv.get(APP_STATE_KEYS.INTEREST) ?? getLocalItem(APP_STATE_KEYS.INTEREST, DEFAULT_INTEREST_TRANCHES),
+    tdsSettings: kv.get(APP_STATE_KEYS.TDS) ?? getLocalItem(APP_STATE_KEYS.TDS, DEFAULT_TDS_SETTINGS),
+    generalSettings: kv.get(APP_STATE_KEYS.GENERAL) ?? getLocalItem(APP_STATE_KEYS.GENERAL, DEFAULT_GENERAL_SETTINGS),
+    scenarios: kv.get(APP_STATE_KEYS.SCENARIOS) ?? getLocalItem(APP_STATE_KEYS.SCENARIOS, DEFAULT_SCENARIOS),
     savedCalculations,
+    companyProfiles,
     clients,
     truckTypes,
     locations,
@@ -137,14 +239,21 @@ export async function loadAllAppState(): Promise<AppState> {
 }
 
 function rowToSavedCalculation(row: any): SavedCalculation {
+  const input = row.input || {};
+  if (row.client_name && !input.clientName) input.clientName = row.client_name;
+  if (row.truck_type && !input.truckType) input.truckType = row.truck_type;
+  if (row.from_location && !input.fromLocation) input.fromLocation = row.from_location;
+  if (row.to_location && !input.toLocation) input.toLocation = row.to_location;
+  if (row.truck_number && !input.truckNumber) input.truckNumber = row.truck_number;
+
   return {
     id: row.id,
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    tripNumber: row.trip_number || '',
-    notes: row.notes || '',
-    input: row.input,
+    tripNumber: row.trip_number || input.tripNumber || '',
+    notes: row.notes || input.notes || '',
+    input,
     expenses: row.expenses,
     interestTranches: row.interest_tranches,
     tdsSettings: row.tds_settings,
@@ -154,12 +263,22 @@ function rowToSavedCalculation(row: any): SavedCalculation {
 }
 
 async function upsertAppStateValue(key: string, value: unknown): Promise<void> {
-  const { error } = await supabase
-    .from(TABLES.APP_STATE)
-    .upsert({ key, value, updated_at: new Date().toISOString() });
-  if (error) {
-    console.error(`Failed to save "${key}" to Supabase`, error);
+  setLocalItem(`app_state_${key}`, value);
+  try {
+    const { error } = await supabase
+      .from(TABLES.APP_STATE)
+      .upsert({ key, value, updated_at: new Date().toISOString() });
+    if (error) {
+      console.warn(`Failed to save "${key}" to Supabase`, error);
+    }
+  } catch (err) {
+    console.warn(`Failed to save "${key}" to Supabase (offline/error)`, err);
   }
+}
+
+export async function saveCompanyProfiles(profiles: CompanyProfile[]): Promise<void> {
+  await upsertAppStateValue(APP_STATE_KEYS.COMPANY_PROFILES, profiles);
+  setLocalItem('company_profiles_cache', profiles);
 }
 
 export async function saveCurrentInput(input: CalculationInput): Promise<void> {
@@ -232,29 +351,36 @@ export async function saveNewCalculation(
     result,
   };
 
-  const { error } = await supabase.from(TABLES.SAVED_CALCULATIONS).insert({
-    id: newRecord.id,
-    name: newRecord.name,
-    trip_number: newRecord.tripNumber,
-    notes: newRecord.notes,
-    client_name: input.clientName || null,
-    truck_type: input.truckType || null,
-    from_location: input.fromLocation || null,
-    to_location: input.toLocation || null,
-    input: newRecord.input,
-    expenses: newRecord.expenses,
-    interest_tranches: newRecord.interestTranches,
-    tds_settings: newRecord.tdsSettings,
-    general_settings: newRecord.generalSettings,
-    result: newRecord.result,
-    created_at: newRecord.createdAt,
-    updated_at: newRecord.updatedAt,
-  });
+  try {
+    const { error } = await supabase.from(TABLES.SAVED_CALCULATIONS).insert({
+      id: newRecord.id,
+      name: newRecord.name,
+      trip_number: newRecord.tripNumber,
+      notes: newRecord.notes,
+      client_name: input.clientName || null,
+      truck_type: input.truckType || null,
+      from_location: input.fromLocation || null,
+      to_location: input.toLocation || null,
+      truck_number: input.truckNumber || null,
+      input: newRecord.input,
+      expenses: newRecord.expenses,
+      interest_tranches: newRecord.interestTranches,
+      tds_settings: newRecord.tdsSettings,
+      general_settings: newRecord.generalSettings,
+      result: newRecord.result,
+      created_at: newRecord.createdAt,
+      updated_at: newRecord.updatedAt,
+    });
 
-  if (error) {
-    console.error('Failed to save calculation to Supabase', error);
-    throw error;
+    if (error) {
+      console.warn('Failed to save calculation to Supabase', error);
+    }
+  } catch (err) {
+    console.warn('Supabase offline, saving calculation locally', err);
   }
+
+  const cached = getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
+  setLocalItem('saved_calculations_cache', [newRecord, ...cached.filter((c) => c.id !== newRecord.id)]);
 
   return newRecord;
 }
@@ -262,31 +388,51 @@ export async function saveNewCalculation(
 export async function deleteSavedCalculation(
   id: string
 ): Promise<SavedCalculation[]> {
-  const { error } = await supabase
-    .from(TABLES.SAVED_CALCULATIONS)
-    .delete()
-    .eq('id', id);
-  if (error) {
-    console.error('Failed to delete calculation from Supabase', error);
+  try {
+    const { error } = await supabase
+      .from(TABLES.SAVED_CALCULATIONS)
+      .delete()
+      .eq('id', id);
+    if (error) {
+      console.warn('Failed to delete calculation from Supabase', error);
+    }
+  } catch (err) {
+    console.warn('Failed to delete calculation from Supabase (offline)', err);
   }
+
+  const cached = getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
+  const updated = cached.filter((c) => c.id !== id);
+  setLocalItem('saved_calculations_cache', updated);
+
   return refetchSavedCalculations();
 }
 
 export async function duplicateSavedCalculation(
   id: string
 ): Promise<SavedCalculation | null> {
-  const { data, error } = await supabase
-    .from(TABLES.SAVED_CALCULATIONS)
-    .select('*')
-    .eq('id', id)
-    .single();
+  let target: SavedCalculation | null = null;
+  try {
+    const { data, error } = await supabase
+      .from(TABLES.SAVED_CALCULATIONS)
+      .select('*')
+      .eq('id', id)
+      .single();
 
-  if (error || !data) {
-    console.error('Failed to load calculation to duplicate', error);
+    if (!error && data) {
+      target = rowToSavedCalculation(data);
+    }
+  } catch {}
+
+  if (!target) {
+    const cached = getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
+    target = cached.find((c) => c.id === id) || null;
+  }
+
+  if (!target) {
+    console.error('Failed to load calculation to duplicate');
     return null;
   }
 
-  const target = rowToSavedCalculation(data);
   const nowIso = new Date().toISOString();
   const duplicated: SavedCalculation = {
     ...JSON.parse(JSON.stringify(target)),
@@ -296,43 +442,54 @@ export async function duplicateSavedCalculation(
     updatedAt: nowIso,
   };
 
-  const { error: insertError } = await supabase
-    .from(TABLES.SAVED_CALCULATIONS)
-    .insert({
-      id: duplicated.id,
-      name: duplicated.name,
-      trip_number: duplicated.tripNumber,
-      notes: duplicated.notes,
-      input: duplicated.input,
-      expenses: duplicated.expenses,
-      interest_tranches: duplicated.interestTranches,
-      tds_settings: duplicated.tdsSettings,
-      general_settings: duplicated.generalSettings,
-      result: duplicated.result,
-      created_at: duplicated.createdAt,
-      updated_at: duplicated.updatedAt,
-    });
+  try {
+    const { error: insertError } = await supabase
+      .from(TABLES.SAVED_CALCULATIONS)
+      .insert({
+        id: duplicated.id,
+        name: duplicated.name,
+        trip_number: duplicated.tripNumber,
+        notes: duplicated.notes,
+        input: duplicated.input,
+        expenses: duplicated.expenses,
+        interest_tranches: duplicated.interestTranches,
+        tds_settings: duplicated.tdsSettings,
+        general_settings: duplicated.generalSettings,
+        result: duplicated.result,
+        created_at: duplicated.createdAt,
+        updated_at: duplicated.updatedAt,
+      });
 
-  if (insertError) {
-    console.error('Failed to duplicate calculation in Supabase', insertError);
-    return null;
+    if (insertError) {
+      console.warn('Failed to duplicate calculation in Supabase', insertError);
+    }
+  } catch (err) {
+    console.warn('Supabase offline during duplicate', err);
   }
+
+  const cached = getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
+  setLocalItem('saved_calculations_cache', [duplicated, ...cached]);
 
   return duplicated;
 }
 
 export async function refetchSavedCalculations(): Promise<SavedCalculation[]> {
-  const { data, error } = await supabase
-    .from(TABLES.SAVED_CALCULATIONS)
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from(TABLES.SAVED_CALCULATIONS)
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Failed to reload saved calculations from Supabase', error);
-    return [];
+    if (!error && data) {
+      const items = data.map(rowToSavedCalculation);
+      setLocalItem('saved_calculations_cache', items);
+      return items;
+    }
+  } catch (err) {
+    console.warn('Failed to reload saved calculations from Supabase', err);
   }
 
-  return (data || []).map(rowToSavedCalculation);
+  return getLocalItem<SavedCalculation[]>('saved_calculations_cache', []);
 }
 
 export async function resetAllToDefaults(): Promise<void> {
@@ -356,10 +513,16 @@ export async function resetAllToDefaults(): Promise<void> {
 // ============================================================================
 
 function rowToCalculationHistoryEntry(row: any): CalculationHistoryEntry {
+  const input = row.input || {};
+  if (row.client_name && !input.clientName) input.clientName = row.client_name;
+  if (row.truck_type && !input.truckType) input.truckType = row.truck_type;
+  if (row.trip_number && !input.tripNumber) input.tripNumber = row.trip_number;
+  if (row.truck_number && !input.truckNumber) input.truckNumber = row.truck_number;
+
   return {
     id: row.id,
     createdAt: row.created_at,
-    input: row.input,
+    input,
     expenses: row.expenses,
     interestTranches: row.interest_tranches,
     tdsSettings: row.tds_settings,
@@ -734,16 +897,24 @@ const MASTER_TABLE: Record<MasterDataKind, string> = {
 export async function loadMasterData(
   kind: MasterDataKind
 ): Promise<MasterDataItem[]> {
-  const { data, error } = await supabase
-    .from(MASTER_TABLE[kind])
-    .select('id, name')
-    .order('name', { ascending: true });
+  try {
+    const { data, error } = await supabase
+      .from(MASTER_TABLE[kind])
+      .select('id, name')
+      .order('name', { ascending: true });
 
-  if (error) {
-    console.error(`Failed to load ${kind} from Supabase`, error);
-    return [];
+    if (error) {
+      console.warn(`Failed to load ${kind} from Supabase`, error);
+      return getLocalItem<MasterDataItem[]>(`master_${kind}_cache`, []);
+    }
+    if (data && Array.isArray(data)) {
+      setLocalItem(`master_${kind}_cache`, data);
+    }
+    return data || [];
+  } catch (err) {
+    console.warn(`Network error loading ${kind} from Supabase`, err);
+    return getLocalItem<MasterDataItem[]>(`master_${kind}_cache`, []);
   }
-  return data || [];
 }
 
 /**
@@ -762,25 +933,45 @@ export async function addMasterDataItem(
   const table = MASTER_TABLE[kind];
   const id = kind + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
-  const { data, error } = await supabase
-    .from(table)
-    .insert({ id, name: trimmed })
-    .select('id, name')
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from(table)
+      .insert({ id, name: trimmed })
+      .select('id, name')
+      .single();
 
-  if (!error && data) return data;
+    if (!error && data) {
+      const cached = getLocalItem<MasterDataItem[]>(`master_${kind}_cache`, []);
+      setLocalItem(`master_${kind}_cache`, [...cached.filter((c) => c.id !== data.id), data]);
+      return data;
+    }
 
-  // Likely a duplicate (unique index on lower(name)) — look up the existing
-  // row instead of failing the "Add New" action.
-  const { data: existing } = await supabase
-    .from(table)
-    .select('id, name')
-    .ilike('name', trimmed)
-    .limit(1)
-    .maybeSingle();
+    // Likely a duplicate (unique index on lower(name)) — look up the existing
+    // row instead of failing the "Add New" action.
+    const { data: existing } = await supabase
+      .from(table)
+      .select('id, name')
+      .ilike('name', trimmed)
+      .limit(1)
+      .maybeSingle();
 
-  if (existing) return existing;
+    if (existing) {
+      const cached = getLocalItem<MasterDataItem[]>(`master_${kind}_cache`, []);
+      setLocalItem(`master_${kind}_cache`, [...cached.filter((c) => c.id !== existing.id), existing]);
+      return existing;
+    }
+  } catch (err) {
+    console.warn(`Failed to add "${trimmed}" to ${kind} on Supabase`, err);
+  }
 
-  console.error(`Failed to add "${trimmed}" to ${kind}`, error);
-  return null;
+  // Local fallback
+  const localItem: MasterDataItem = { id, name: trimmed };
+  const cached = getLocalItem<MasterDataItem[]>(`master_${kind}_cache`, []);
+  if (!cached.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
+    setLocalItem(
+      `master_${kind}_cache`,
+      [...cached, localItem].sort((a, b) => a.name.localeCompare(b.name))
+    );
+  }
+  return localItem;
 }

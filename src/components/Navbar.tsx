@@ -1,9 +1,11 @@
 import React from 'react';
 import {
   BarChart3,
+  Building2,
   Calculator,
   History,
   Layers,
+  Plus,
   Sliders,
   Truck,
   Zap,
@@ -21,6 +23,8 @@ interface NavbarProps {
   pctProfitAfterTds?: number;
   generalSettings: GeneralSettings;
   onDownloadAndroidZip?: () => void;
+  onOpenCompanyProfilesModal?: () => void;
+  activeClientName?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -33,11 +37,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   netProfitWithTds,
   pctProfitAfterTds,
   generalSettings,
+  onOpenCompanyProfilesModal,
+  activeClientName,
 }) => {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Layers },
+    { id: 'dashboard', label: 'Trip Pricing', icon: Layers },
     { id: 'quick', label: 'Quick Calc', icon: Zap },
-    { id: 'bulk', label: 'Multi-Vehicle Entry', icon: Truck },
     { id: 'details', label: 'Detailed Breakdown', icon: Calculator },
     { id: 'scenarios', label: 'What-If Scenarios', icon: BarChart3 },
     { id: 'settings', label: 'Engine Settings', icon: Sliders },
@@ -46,12 +51,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md">
-      {/* Top bar with quick numbers */}
+      {/* Top bar with quick numbers & Add Client */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-3">
           {/* Logo & Title */}
           <div
-            className="flex items-center gap-3 cursor-pointer"
+            className="flex items-center gap-3 cursor-pointer shrink-0"
             onClick={() => setActiveTab('dashboard')}
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 text-slate-950 flex items-center justify-center shadow-md">
@@ -71,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Quick Active Trip Ticker */}
-          <div className="flex items-center gap-3 sm:gap-4 bg-slate-800/80 px-3 sm:px-4 py-1.5 rounded-xl border border-slate-700/80 text-xs">
+          <div className="hidden lg:flex items-center gap-3 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700/80 text-xs">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">SP:</span>
               <span className="font-bold text-white font-mono">
@@ -85,8 +90,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {generalSettings.currencySymbol}{buyingPrice.toLocaleString()}
               </span>
             </div>
-            <span className="text-slate-600 hidden sm:inline">|</span>
-            <div className="hidden sm:flex items-center gap-1.5">
+            <span className="text-slate-600">|</span>
+            <div className="flex items-center gap-1.5">
               <span className="text-slate-400">PAT:</span>
               <span
                 className={`font-black font-mono ${
@@ -101,9 +106,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             {netProfitWithTds !== undefined && pctProfitAfterTds !== undefined && (
               <>
-                <span className="text-slate-600 hidden md:inline">|</span>
-                <div className="hidden md:flex items-center gap-1.5" title="Net Profit = Profit After Tax + Net Saving in TDS">
-                  <span className="text-slate-400">Net Profit (TDS):</span>
+                <span className="text-slate-600">|</span>
+                <div className="flex items-center gap-1.5" title="Net Profit = Profit After Tax + Net Saving in TDS">
+                  <span className="text-slate-400">Net:</span>
                   <span
                     className={`font-black font-mono ${
                       netProfitWithTds >= 0 ? 'text-amber-400' : 'text-rose-400'
@@ -111,11 +116,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     {generalSettings.currencySymbol}{netProfitWithTds.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </span>
-                  <span className="text-amber-300 font-bold font-mono">
-                    ({pctProfitAfterTds.toFixed(2)}%)
-                  </span>
                 </div>
               </>
+            )}
+          </div>
+
+          {/* Top Actions: Add Client / Company Profile */}
+          <div className="flex items-center gap-2 shrink-0">
+            {onOpenCompanyProfilesModal && (
+              <button
+                type="button"
+                onClick={onOpenCompanyProfilesModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition shadow-sm"
+                title="Manage Client Company Profiles & Engine Settings"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Clients & Engine Profiles</span>
+                <span className="sm:hidden">Clients</span>
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-950 text-amber-400 text-[10px] font-bold">
+                  +
+                </span>
+              </button>
             )}
           </div>
         </div>
