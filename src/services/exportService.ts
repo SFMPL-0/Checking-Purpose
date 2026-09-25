@@ -37,7 +37,12 @@ export function exportCalculationToExcel(
     ['FREIGHT PROFIT, TAX & INTEREST REPORT', ''],
     ['Generated Date:', new Date().toLocaleString()],
     ['Trip / Ref:', input.tripNumber || 'N/A'],
-    ['Title / Client:', input.title || 'N/A'],
+    ['Title / Client:', input.title || input.clientName || 'N/A'],
+    ['LR Date:', input.lrDate || 'N/A'],
+    ['Credit Period (Days):', input.creditPeriodDays ?? 20],
+    ['Credit Period Due Date:', result.creditPeriodDueDate || 'N/A'],
+    ['Financial Year End Date:', input.financialYearEndDate || 'N/A'],
+    ['TDS Refund Period (Months):', result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths],
     ['', ''],
     ['1. CORE REVENUE & GROSS PROFIT', 'AMOUNT (INR)'],
     ['Selling Price (Freight Revenue)', result.sellingPrice],
@@ -72,7 +77,7 @@ export function exportCalculationToExcel(
     ['6. TDS CLAIM & REFUND COMPUTATION', 'AMOUNT (INR)'],
     ['Nominal TDS Deducted (2% on SP)', result.tdsRefund.nominalTdsAmount],
     [
-      `Less: Carrying Cost (${tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
+      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
       -result.tdsRefund.carryingCostAmount,
     ],
     [
@@ -83,6 +88,12 @@ export function exportCalculationToExcel(
     ['Net Saving in TDS', result.tdsRefund.netSavingInTds],
     ['Net Effective Profit with TDS Recovery', result.tdsRefund.netEffectiveProfitWithTds],
     ['Percentage of Profit After TDS Saving', `${result.tdsRefund.percentageOfProfitAfterTdsSaving}%`],
+    ['', ''],
+    ['7. SUMMARY (EXCEL P&L MODEL)', 'AMOUNT (INR)'],
+    ['Profit After Tax', result.profitAfterTax],
+    ['Net Saving in TDS', result.tdsRefund.netSavingInTds],
+    ['Total Benefit (PAT + Net Saving in TDS)', result.totalBenefit ?? (result.profitAfterTax + result.tdsRefund.netSavingInTds)],
+    ['% To Sales', `${result.percentToSales ?? (result.sellingPrice > 0 ? Math.round(((result.totalBenefit ?? 0) / result.sellingPrice) * 100) : 0)}%`],
   ];
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
@@ -508,7 +519,7 @@ export async function exportCalculationToPdf(
       formatCurrency(result.tdsRefund.nominalTdsAmount, generalSettings.currencySymbol),
     ],
     [
-      `Less: Carrying Cost (${tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
+      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
       'Financing cost during refund hold period',
       `-${formatCurrency(result.tdsRefund.carryingCostAmount, generalSettings.currencySymbol)}`,
     ],

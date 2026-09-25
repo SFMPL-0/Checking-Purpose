@@ -47,6 +47,7 @@ interface DashboardViewProps {
   setInput: React.Dispatch<React.SetStateAction<CalculationInput>>;
   result: CalculationResult;
   expenses: ExpenseItem[];
+  setExpenses?: React.Dispatch<React.SetStateAction<ExpenseItem[]>>;
   interestTranches: InterestTranche[];
   tdsSettings: TdsRefundSettings;
   generalSettings: GeneralSettings;
@@ -73,6 +74,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   setInput,
   result,
   expenses,
+  setExpenses,
   interestTranches,
   tdsSettings,
   generalSettings,
@@ -153,7 +155,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleDaysSlider = (days: number) => {
     setQuickDays(days);
-    setInput((prev) => ({ ...prev, customDays: days }));
+    setInput((prev) => ({
+      ...prev,
+      customDays: days,
+      creditPeriodDays: days,
+    }));
   };
 
   const handleRateSlider = (rate: number) => {
@@ -164,12 +170,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const resetQuickSliders = () => {
     setQuickDays(20);
     setQuickRate(1.0);
-    setInput((prev) => {
-      const copy = { ...prev };
-      delete copy.customDays;
-      delete copy.customInterestRate;
-      return copy;
-    });
+    setInput((prev) => ({
+      ...prev,
+      customDays: 20,
+      creditPeriodDays: 20,
+    }));
+  };
+
+  const handleToggleExpense = (id: string) => {
+    if (!setExpenses) return;
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e))
+    );
+  };
+
+  const handleUpdateExpenseName = (id: string, name: string) => {
+    if (!setExpenses) return;
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, name } : e))
+    );
+  };
+
+  const handleUpdateExpenseRate = (id: string, percentage: number) => {
+    if (!setExpenses) return;
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, percentage } : e))
+    );
+  };
+
+  const handleUpdateExpenseFixed = (id: string, fixedAmount: number) => {
+    if (!setExpenses) return;
+    setExpenses((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, fixedAmount: Math.max(0, fixedAmount) } : e
+      )
+    );
   };
 
   const handleSelectClient = (clientName: string) => {
@@ -599,6 +634,121 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onAddNew={(name) => onAddMasterData('locations', name)}
                 placeholder="Destination"
               />
+
+              {/* Trip Timing, Credit Period & TDS Schedule (Excel Model) */}
+              <div className="col-span-2 pt-2 border-t border-slate-700/60 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Trip Timing & Credit Model</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">P&L Date Controls</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* LR Date */}
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">
+                      LR Date (Lorry Receipt)
+                    </label>
+                    <input
+                      type="date"
+                      value={input.lrDate || ''}
+                      onChange={(e) =>
+                        setInput((p) => ({ ...p, lrDate: e.target.value }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Credit Period (Days) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="text-[10px] font-semibold text-slate-400">
+                        Credit Period (Days)
+                      </label>
+                      <span className="text-[10px] font-mono text-amber-400 font-bold">
+                        {input.creditPeriodDays ?? 20}d
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="365"
+                      value={input.creditPeriodDays ?? 20}
+                      onChange={(e) => {
+                        const days = Math.max(0, parseInt(e.target.value, 10) || 0);
+                        setQuickDays(days);
+                        setInput((p) => ({
+                          ...p,
+                          creditPeriodDays: days,
+                          customDays: days,
+                        }));
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Credit Period Due Date (Auto-calculated) */}
+                  <div className="p-2 rounded-lg bg-slate-950/70 border border-blue-500/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">Credit Period Due Date</span>
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-bold">
+                        Auto
+                      </span>
+                    </div>
+                    <div className="text-xs font-black text-cyan-300 font-mono mt-0.5">
+                      {result.creditPeriodDueDate || '—'}
+                    </div>
+                    <div className="text-[9px] text-slate-500">
+                      LR Date + {input.creditPeriodDays ?? 20} days
+                    </div>
+                  </div>
+
+                  {/* Financial Year End Date & TDS Refund Period */}
+                  <div className="p-2 rounded-lg bg-slate-950/70 border border-amber-500/30 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-semibold text-slate-400">
+                        FY End Date
+                      </label>
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                        Auto TDS
+                      </span>
+                    </div>
+                    <input
+                      type="date"
+                      value={input.financialYearEndDate || ''}
+                      onChange={(e) =>
+                        setInput((p) => ({
+                          ...p,
+                          financialYearEndDate: e.target.value,
+                        }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-amber-500"
+                    />
+                    <div className="flex items-center justify-between text-[10px] pt-0.5">
+                      <span className="text-slate-400">TDS Refund Period:</span>
+                      <span className="font-mono font-bold text-amber-300">
+                        {result.tdsRefundPeriodMonths !== undefined
+                          ? `${result.tdsRefundPeriodMonths} mos`
+                          : '18 mos'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Validation warning if FY End Date < LR Date */}
+                {input.lrDate &&
+                  input.financialYearEndDate &&
+                  input.financialYearEndDate < input.lrDate && (
+                    <div className="p-2 bg-rose-950/40 border border-rose-500/40 rounded-lg text-rose-300 text-[11px] flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      <span>
+                        FY End Date is earlier than LR Date. TDS refund period cannot be negative.
+                      </span>
+                    </div>
+                  )}
+              </div>
             </div>
           </div>
         </div>
@@ -778,6 +928,150 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Trip Operating Expenses & Statutory P&L Breakdown */}
+      <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/80 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Percent className="w-4 h-4 text-amber-400" />
+              <h2 className="text-base font-bold text-white">
+                Trip Operating Expenses Breakdown
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Statutory TDS, Salaries, Management, Commission, Consultation, Ho Expenses (0.25%), and Other Expenses (Fixed ₹).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-right">
+              <span className="text-slate-400">Total Operating: </span>
+              <span className="font-bold text-amber-400 font-mono">
+                {formatCurrency(result.totalOperatingExpenses, generalSettings.currencySymbol)}
+              </span>
+            </div>
+            <button
+              onClick={() => onNavigateTab('settings')}
+              className="text-xs text-blue-400 hover:text-blue-300 font-medium underline"
+            >
+              Engine Settings
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {expenses.map((exp) => {
+            const detail = result.expenseDetails.find((d) => d.id === exp.id);
+            const computedAmt = detail?.amount ?? 0;
+            const isOtherExp = exp.id === 'exp-other' || exp.name.toLowerCase().includes('other expense');
+
+            return (
+              <div
+                key={exp.id}
+                className={`p-3.5 rounded-xl border transition flex flex-col justify-between space-y-2.5 ${
+                  exp.enabled
+                    ? 'bg-slate-900/80 border-slate-700/90'
+                    : 'bg-slate-950/40 border-slate-800/80 opacity-60'
+                }`}
+              >
+                {/* Header: Toggle & Editable Name */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={exp.enabled}
+                      onChange={() => handleToggleExpense(exp.id)}
+                      className="accent-amber-500 w-4 h-4 rounded cursor-pointer shrink-0"
+                      title={exp.enabled ? 'Enabled' : 'Disabled'}
+                    />
+                    <input
+                      type="text"
+                      value={exp.name}
+                      onChange={(e) => handleUpdateExpenseName(exp.id, e.target.value)}
+                      placeholder="Expense Name"
+                      className="bg-transparent border-b border-transparent hover:border-slate-600 focus:border-blue-500 text-xs font-semibold text-white truncate focus:outline-none w-full"
+                      title="Click to rename this expense"
+                    />
+                  </div>
+                  {exp.isTds && (
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">
+                      TDS 194C
+                    </span>
+                  )}
+                  {exp.id === 'exp-ho' && (
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold shrink-0">
+                      HO Exp
+                    </span>
+                  )}
+                  {isOtherExp && (
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold shrink-0">
+                      Editable
+                    </span>
+                  )}
+                </div>
+
+                {/* Rate / Amount input */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-slate-400 block mb-0.5">
+                      {exp.basis === 'fixed_amount' ? 'Fixed ₹' : `${exp.basis.replace(/_/g, ' ')} %`}
+                    </label>
+                    {exp.basis === 'fixed_amount' ? (
+                      <div className="relative">
+                        <span className="absolute left-2 top-1 text-slate-400 text-xs font-mono">
+                          {generalSettings.currencySymbol}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="50"
+                          value={exp.fixedAmount}
+                          onChange={(e) =>
+                            handleUpdateExpenseFixed(
+                              exp.id,
+                              Math.max(0, parseFloat(e.target.value) || 0)
+                            )
+                          }
+                          className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-6 pr-2 py-1 text-xs text-white font-mono font-bold focus:border-blue-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.05"
+                          value={exp.percentage}
+                          onChange={(e) =>
+                            handleUpdateExpenseRate(
+                              exp.id,
+                              Math.max(0, parseFloat(e.target.value) || 0)
+                            )
+                          }
+                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white font-mono font-bold focus:border-blue-500"
+                        />
+                        <span className="absolute right-2 top-1 text-slate-400 text-xs font-mono">
+                          %
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Computed Amount Display */}
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">Computed</span>
+                    <span className="text-xs font-bold text-amber-300 font-mono">
+                      {formatCurrency(computedAmt, generalSettings.currencySymbol)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -92,6 +92,17 @@ export interface CalculationInput {
   // being edited directly.
   vehicleEntryMode?: 'single' | 'multiple';
   vehicles?: VehiclePricingEntry[];
+  // Trip Timing & Credit Model fields
+  lrDate?: string; // Lorry Receipt date for the trip (YYYY-MM-DD)
+  financialYearEndDate?: string; // FY end date (defaults to 31 March, editable per trip)
+  creditPeriodDays?: number; // Shared trip-level credit period in days (default 30)
+  annualInterestRate?: number; // % — "Annual Interest Rate" (default 1%)
+  incomeTaxRate?: number; // % — "Income Tax Rate (on NP)" (default 27%)
+  tdsRefundInterestRateMonthly?: number; // % — "TDS Refund Int. Rate / month" (default 1.5% or 0.015)
+  itInterestPaidRateMonthly?: number; // % — "IT Interest Paid Rate / month" (default 0.5% or 0.005)
+  itInterestReceivedMonths?: number; // number — "IT Interest Recd From IT Department" (default 6)
+  tdsCalculationVariant?: 'standard' | 'excel_swapped'; // Allows verifying sheet swapped terms
+  itInterestMethod?: 'linked' | 'flat_3pct'; // Allows flat 3% vs linked (rate × months)
 }
 
 // One vehicle's full pricing details inside Multiple Entry mode. Each has
@@ -150,6 +161,16 @@ export interface TdsRefundResult {
   netEffectiveProfitWithTds: number; // alias for netProfitWithTdsSaving
   percentageOfProfitAfterTdsSaving: number; // Net Profit / Selling Price * 100
   formulaSummary: string;
+  // Computed TDS refund carrying period details
+  refundPeriodMonths?: number;
+  isRefundPeriodComputed?: boolean;
+  // Excel matching labels
+  notionalTaxComputed?: number;
+  interestToGetTdsRefund?: number;
+  interestPaidByItDept?: number;
+  actualIncomeTaxLiability?: number;
+  totalBenefit?: number; // PAT + Net Saving in TDS
+  percentToSales?: number; // ROUND(Total Benefit ÷ Selling Price × 100, 0)
 }
 
 export interface CalculationResult {
@@ -183,6 +204,13 @@ export interface CalculationResult {
   isNegativeProfit: boolean;
   isExpenseExceedingGross: boolean;
   allocationSum: number;
+
+  // Read-only calculated fields matching Excel P&L model
+  creditPeriodDueDate?: string; // lrDate + creditPeriodDays (YYYY-MM-DD)
+  tdsRefundPeriodMonths?: number; // ROUND((financialYearEndDate - lrDate) / 30, 1)
+  isTdsRefundPeriodComputed?: boolean;
+  totalBenefit?: number; // Total Benefit = Profit After Tax + Net Saving in TDS
+  percentToSales?: number; // ROUND(Total Benefit ÷ Selling Price × 100, 0)
 }
 
 export interface SavedCalculation {

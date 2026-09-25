@@ -717,6 +717,7 @@ export default function App() {
             setInput={setInput}
             result={result}
             expenses={expenses}
+            setExpenses={setExpenses}
             interestTranches={interestTranches}
             tdsSettings={tdsSettings}
             generalSettings={generalSettings}
@@ -765,6 +766,7 @@ export default function App() {
         {activeTab === 'details' && (
           <CalculationDetailsView
             input={input}
+            setInput={setInput}
             result={result}
             expenses={expenses}
             interestTranches={interestTranches}

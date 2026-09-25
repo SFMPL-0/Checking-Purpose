@@ -24,16 +24,24 @@ export const DEFAULT_EXPENSES: ExpenseItem[] = [
     isTds: true,
   },
   {
-    id: 'exp-salary',
-    name: 'Salary expenses',
+    id: 'exp-interest',
+    name: 'Interest on 30 Days',
     enabled: true,
     basis: 'selling_price',
     percentage: 1.0,
     fixedAmount: 0,
   },
   {
+    id: 'exp-salary',
+    name: 'Salary (on Selling Price)',
+    enabled: true,
+    basis: 'selling_price',
+    percentage: 0.75,
+    fixedAmount: 0,
+  },
+  {
     id: 'exp-mgmt',
-    name: 'Management expenses',
+    name: 'Management Expenses',
     enabled: true,
     basis: 'selling_price',
     percentage: 1.0,
@@ -49,36 +57,31 @@ export const DEFAULT_EXPENSES: ExpenseItem[] = [
   },
   {
     id: 'exp-consult',
-    name: 'Consultation expenses',
+    name: 'Consultation',
     enabled: true,
     basis: 'selling_price',
-    percentage: 1.0,
+    percentage: 0.75,
+    fixedAmount: 0,
+  },
+  {
+    id: 'exp-ho',
+    name: 'Ho Expenses',
+    enabled: true,
+    basis: 'selling_price',
+    percentage: 0.25,
+    fixedAmount: 0,
+  },
+  {
+    id: 'exp-other',
+    name: 'Other Expenses',
+    enabled: true,
+    basis: 'fixed_amount',
+    percentage: 0,
     fixedAmount: 0,
   },
 ];
 
-export const DEFAULT_INTEREST_TRANCHES: InterestTranche[] = [
-  {
-    id: 'int-75',
-    name: 'Interest on 75% amount',
-    allocationPercentage: 75.0,
-    annualRate: 1.0,
-    days: 20,
-    daysInYear: 365,
-    isDailyRate: false,
-    basis: 'selling_price',
-  },
-  {
-    id: 'int-25',
-    name: 'Interest on 25% amount',
-    allocationPercentage: 25.0,
-    annualRate: 1.0,
-    days: 20,
-    daysInYear: 365,
-    isDailyRate: false,
-    basis: 'selling_price',
-  },
-];
+export const DEFAULT_INTEREST_TRANCHES: InterestTranche[] = [];
 
 export const DEFAULT_TDS_SETTINGS: TdsRefundSettings = {
   enabled: true,
@@ -97,12 +100,111 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   currencySymbol: '₹',
   currencyCode: 'INR',
   decimalPlaces: 2,
-  defaultDays: 20,
+  defaultDays: 30,
   defaultInterestRate: 1.0,
   defaultIncomeTaxRate: 27.0,
   daysPerYear: 365,
   activeMode: 'quick',
 };
+
+/**
+ * Returns India Financial Year End date (e.g. 2027-03-31) for a given reference date
+ */
+export function getDefaultFinancialYearEndDate(baseDateStr?: string): string {
+  const d = baseDateStr ? new Date(baseDateStr) : new Date();
+  const year = isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+  const month = isNaN(d.getTime()) ? new Date().getMonth() : d.getMonth();
+  // Financial year in India runs April 1 to March 31
+  // If month is Jan, Feb, Mar (0, 1, 2), FY ends March 31 of current calendar year
+  // Otherwise March 31 of next calendar year
+  const fyEndYear = month <= 2 ? year : year + 1;
+  return `${fyEndYear}-03-31`;
+}
+
+/**
+ * Computes credit period due date: lrDate + creditPeriodDays
+ */
+export function computeCreditPeriodDueDate(
+  lrDate?: string,
+  creditPeriodDays?: number
+): string {
+  if (!lrDate) return '';
+  const parts = lrDate.split('-');
+  const days =
+    typeof creditPeriodDays === 'number' && !isNaN(creditPeriodDays)
+      ? Math.round(creditPeriodDays)
+      : 0;
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dt = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dt}`;
+  }
+  const d = new Date(lrDate);
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+/**
+ * Computes TDS refund period months: ROUND((financialYearEndDate − lrDate) / 30, 1)
+ */
+export function computeTdsRefundPeriodMonths(
+  financialYearEndDate?: string,
+  lrDate?: string,
+  fallbackMonths: number = 18
+): { months: number; isComputed: boolean; isNegative: boolean } {
+  if (!financialYearEndDate || !lrDate) {
+    return { months: fallbackMonths, isComputed: false, isNegative: false };
+  }
+  const pFy = financialYearEndDate.split('-').map(Number);
+  const pLr = lrDate.split('-').map(Number);
+  if (pFy.length === 3 && pLr.length === 3 && !pFy.some(isNaN) && !pLr.some(isNaN)) {
+    const dateFy = new Date(pFy[0], pFy[1] - 1, pFy[2]);
+    const dateLr = new Date(pLr[0], pLr[1] - 1, pLr[2]);
+    const diffTime = dateFy.getTime() - dateLr.getTime();
+    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    if (diffDays < 0) {
+      return { months: 0, isComputed: true, isNegative: true };
+    }
+    return { months: roundTo(diffDays / 30, 1), isComputed: true, isNegative: false };
+  }
+  const dFy = new Date(financialYearEndDate).getTime();
+  const dLr = new Date(lrDate).getTime();
+  if (isNaN(dFy) || isNaN(dLr)) {
+    return { months: fallbackMonths, isComputed: false, isNegative: false };
+  }
+  const diffDays = (dFy - dLr) / (1000 * 60 * 60 * 24);
+  if (diffDays < 0) {
+    return { months: 0, isComputed: true, isNegative: true };
+  }
+  return { months: roundTo(diffDays / 30, 1), isComputed: true, isNegative: false };
+}
+
+/**
+ * Helper to ensure loaded expenses contain all Excel P&L rows in exact order
+ */
+export function ensureDefaultExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
+  if (!Array.isArray(expenses) || expenses.length === 0) {
+    return [...DEFAULT_EXPENSES];
+  }
+  const hasInterestRow = expenses.some(
+    (e) => e.id === 'exp-interest' || e.name.toLowerCase().includes('interest on')
+  );
+  if (!hasInterestRow) {
+    // Migrate to updated Excel P&L benchmark expenses
+    return [...DEFAULT_EXPENSES];
+  }
+  return expenses;
+}
+
+const todayInit = new Date();
+const todayDateString = `${todayInit.getFullYear()}-${String(todayInit.getMonth() + 1).padStart(2, '0')}-${String(todayInit.getDate()).padStart(2, '0')}`;
 
 export const DEFAULT_INPUT: CalculationInput = {
   sellingPrice: 50000,
@@ -112,6 +214,16 @@ export const DEFAULT_INPUT: CalculationInput = {
   vehicleEntryMode: 'single',
   vehicles: [],
   truckNumber: '',
+  lrDate: todayDateString,
+  financialYearEndDate: getDefaultFinancialYearEndDate(todayDateString),
+  creditPeriodDays: 30,
+  annualInterestRate: 1.0,
+  incomeTaxRate: 27.0,
+  tdsRefundInterestRateMonthly: 1.5,
+  itInterestPaidRateMonthly: 0.5,
+  itInterestReceivedMonths: 6,
+  tdsCalculationVariant: 'standard',
+  itInterestMethod: 'linked',
 };
 
 /**
@@ -191,7 +303,7 @@ export function calculateFreightProfit(
     (sum, t) => sum + (Number(t.allocationPercentage) || 0),
     0
   );
-  if (Math.abs(allocationSum - 100) > 0.01) {
+  if (interestTranches.length > 0 && Math.abs(allocationSum - 100) > 0.01) {
     warnings.push(
       `Interest allocation percentages sum to ${allocationSum.toFixed(
         1
@@ -207,9 +319,11 @@ export function calculateFreightProfit(
       const allocPct = Number(tranche.allocationPercentage) || 0;
       const principal = roundTo(baseAmount * (allocPct / 100), 2);
 
-      // Support override from quick inputs
+      // Support override from trip creditPeriodDays or quick inputs
       const days =
-        input.customDays !== undefined
+        input.creditPeriodDays !== undefined && !isNaN(Number(input.creditPeriodDays))
+          ? Math.round(Number(input.creditPeriodDays))
+          : input.customDays !== undefined
           ? input.customDays
           : Number(tranche.days) || generalSettings.defaultDays || 20;
       const rate =
@@ -260,7 +374,7 @@ export function calculateFreightProfit(
     }
   );
 
-  const totalInterest = roundTo(
+  const trancheInterestTotal = roundTo(
     interestDetails.reduce((sum, item) => sum + item.amount, 0),
     2
   );
@@ -311,7 +425,13 @@ export function calculateFreightProfit(
     let formulaString = '';
 
     if (exp.basis === 'fixed_amount') {
-      amount = roundTo(Number(exp.fixedAmount) || 0, 2);
+      const fixedVal = Number(exp.fixedAmount) || 0;
+      if (fixedVal < 0) {
+        warnings.push(
+          `Expense "${exp.name}" amount cannot be negative. Value clamped to ₹0.`
+        );
+      }
+      amount = roundTo(Math.max(0, fixedVal), 2);
       formulaString = `Fixed Amount = ${formatCurrency(
         amount,
         generalSettings.currencySymbol
@@ -342,36 +462,64 @@ export function calculateFreightProfit(
     };
   });
 
+  // Check if expense list has an integrated interest row (e.g. "Interest on 30 Days")
+  const hasInterestInExpenses = expenseDetails.some(
+    (e) =>
+      e.id === 'exp-interest' ||
+      e.name.toLowerCase().includes('interest on')
+  );
+
   const totalOperatingExpenses = roundTo(
     expenseDetails.reduce((sum, item) => sum + item.amount, 0),
     2
   );
 
-  const netTotalExpenses = roundTo(totalOperatingExpenses + totalInterest, 2);
+  // When interest is an expense row in the sheet, Total Expenses is the sum of all enabled rows
+  const totalInterest = hasInterestInExpenses
+    ? roundTo(
+        expenseDetails.find(
+          (e) =>
+            (e.id === 'exp-interest' ||
+              e.name.toLowerCase().includes('interest on')) &&
+            e.enabled
+        )?.amount || 0,
+        2
+      )
+    : roundTo(
+        interestDetails.reduce((sum, item) => sum + item.amount, 0),
+        2
+      );
 
-  // 3. Net Profit Before Tax
+  const netTotalExpenses = hasInterestInExpenses
+    ? totalOperatingExpenses
+    : roundTo(totalOperatingExpenses + totalInterest, 2);
+
+  // 3. Net Profit = Gross Profit − Total Expenses
   const netProfitBeforeTax = roundTo(grossProfit - netTotalExpenses, 2);
   const netProfitBeforeTaxMargin =
     sellingPrice > 0
       ? roundTo((netProfitBeforeTax / sellingPrice) * 100, 4)
       : 0;
 
-  // 4. Income Tax
+  // 4. Income Tax on Net Profit = Net Profit × incomeTaxRate
   const taxRate =
-    Number(tdsSettings.actualTaxRate) ||
-    generalSettings.defaultIncomeTaxRate ||
-    27.0;
+    input.incomeTaxRate !== undefined && !isNaN(Number(input.incomeTaxRate))
+      ? Number(input.incomeTaxRate)
+      : Number(tdsSettings.actualTaxRate) ||
+        generalSettings.defaultIncomeTaxRate ||
+        27.0;
+
   // Income tax applies when net profit before tax is positive
   const taxableProfit = Math.max(0, netProfitBeforeTax);
   const incomeTax = roundTo(taxableProfit * (taxRate / 100), 2);
 
-  // 5. Profit After Tax
+  // Profit After Tax = Net Profit − Income Tax
   const profitAfterTax = roundTo(netProfitBeforeTax - incomeTax, 2);
   const percentageOfSale =
     sellingPrice > 0 ? roundTo((profitAfterTax / sellingPrice) * 100, 4) : 0;
 
-  // 6. TDS Claim / Refund Calculation
-  // Find nominal TDS from expense list, or calculate from settings
+  // 5. TDS Claim / Refund Calculation
+  // Notional Tax Computed = TDS amount from row 3 above
   const tdsExpense = expenseDetails.find((e) => e.isTds && e.enabled);
   const nominalTdsAmount = tdsExpense
     ? tdsExpense.amount
@@ -382,20 +530,60 @@ export function calculateFreightProfit(
           ((Number(tdsSettings.nominalTdsRate) || 2.0) / 100),
         2
       );
+  const notionalTaxComputed = nominalTdsAmount;
 
-  // Less Interest for 18 Months @ 1.5% to Get Refund
-  const refundRate = Number(tdsSettings.refundCarryingRate) || 1.5;
-  const refundMonths = Number(tdsSettings.refundCarryingPeriodMonths) || 18;
+  // Trip Credit Period Due Date: lrDate + creditPeriodDays
+  const creditDays =
+    input.creditPeriodDays !== undefined && !isNaN(Number(input.creditPeriodDays))
+      ? Math.round(Number(input.creditPeriodDays))
+      : input.customDays !== undefined && input.customDays > 0
+      ? input.customDays
+      : generalSettings.defaultDays || 30;
+
+  const creditPeriodDueDate = input.lrDate
+    ? computeCreditPeriodDueDate(input.lrDate, creditDays)
+    : undefined;
+
+  // TDS Refund Period (Months): ROUND((financialYearEndDate − lrDate) / 30, 1)
+  let tdsRefundPeriodMonths = Number(tdsSettings.refundCarryingPeriodMonths) || 18;
+  let isTdsRefundPeriodComputed = false;
+
+  if (input.lrDate && input.financialYearEndDate) {
+    const periodCalc = computeTdsRefundPeriodMonths(
+      input.financialYearEndDate,
+      input.lrDate,
+      Number(tdsSettings.refundCarryingPeriodMonths) || 18
+    );
+    if (periodCalc.isNegative) {
+      warnings.push(
+        `Financial Year End Date (${input.financialYearEndDate}) is earlier than LR Date (${input.lrDate}). TDS refund period cannot be negative.`
+      );
+      tdsRefundPeriodMonths = 0;
+      isTdsRefundPeriodComputed = true;
+    } else {
+      tdsRefundPeriodMonths = periodCalc.months;
+      isTdsRefundPeriodComputed = true;
+    }
+  }
+
+  // Less: Interest to Get TDS Refund = Notional Tax × tdsRefundInterestRateMonthly × tdsRefundPeriodMonths
+  const refundRate =
+    input.tdsRefundInterestRateMonthly !== undefined &&
+    !isNaN(Number(input.tdsRefundInterestRateMonthly))
+      ? Number(input.tdsRefundInterestRateMonthly)
+      : Number(tdsSettings.refundCarryingRate) || 1.5;
+
+  const refundMonths = tdsRefundPeriodMonths;
   let carryingCostAmount = 0;
   let carryingCostFormula = '';
 
   if (tdsSettings.refundCarryingMode === 'monthly') {
-    // 1.5% per month for 18 months
+    // refundRate% per month for refundMonths
     carryingCostAmount = roundTo(
       nominalTdsAmount * (refundRate / 100) * refundMonths,
       2
     );
-    carryingCostFormula = `TDS (${formatCurrency(
+    carryingCostFormula = `Notional Tax (${formatCurrency(
       nominalTdsAmount,
       generalSettings.currencySymbol
     )}) × ${refundRate}%/mo × ${refundMonths} mos = ${formatCurrency(
@@ -403,12 +591,11 @@ export function calculateFreightProfit(
       generalSettings.currencySymbol
     )}`;
   } else if (tdsSettings.refundCarryingMode === 'annual') {
-    // 1.5% per annum for 18 months
     carryingCostAmount = roundTo(
       nominalTdsAmount * (refundRate / 100) * (refundMonths / 12),
       2
     );
-    carryingCostFormula = `TDS (${formatCurrency(
+    carryingCostFormula = `Notional Tax (${formatCurrency(
       nominalTdsAmount,
       generalSettings.currencySymbol
     )}) × ${refundRate}%/yr × (${refundMonths}/12) = ${formatCurrency(
@@ -416,9 +603,8 @@ export function calculateFreightProfit(
       generalSettings.currencySymbol
     )}`;
   } else {
-    // Flat
     carryingCostAmount = roundTo(nominalTdsAmount * (refundRate / 100), 2);
-    carryingCostFormula = `TDS (${formatCurrency(
+    carryingCostFormula = `Notional Tax (${formatCurrency(
       nominalTdsAmount,
       generalSettings.currencySymbol
     )}) × ${refundRate}% = ${formatCurrency(
@@ -426,65 +612,88 @@ export function calculateFreightProfit(
       generalSettings.currencySymbol
     )}`;
   }
+  const interestToGetTdsRefund = carryingCostAmount;
 
-  // Add Interest Paid by IT @ 0.5% for 6 Months (Sec 244A)
-  const itRate = Number(tdsSettings.itInterestRate) || 0.5;
-  const itMonths = Number(tdsSettings.itInterestPeriodMonths) || 6;
-  // Refundable principal = Nominal TDS minus actual tax liability
+  // Add: Interest Paid by IT Dept on Excess TDS = (Notional Tax − Income Tax on Net Profit) × itInterestPaidRateMonthly × itInterestReceivedMonths
+  const itMonthlyRate =
+    input.itInterestPaidRateMonthly !== undefined &&
+    !isNaN(Number(input.itInterestPaidRateMonthly))
+      ? Number(input.itInterestPaidRateMonthly)
+      : Number(tdsSettings.itInterestRate) || 0.5;
+
+  const itMonths =
+    input.itInterestReceivedMonths !== undefined &&
+    !isNaN(Number(input.itInterestReceivedMonths))
+      ? Number(input.itInterestReceivedMonths)
+      : Number(tdsSettings.itInterestPeriodMonths) || 6;
+
+  // Refundable principal = Notional Tax minus actual tax liability
   const refundableBase = Math.max(0, nominalTdsAmount - incomeTax);
   let itInterestAmount = 0;
   let itInterestFormula = '';
 
-  if (tdsSettings.itInterestMode === 'monthly') {
-    itInterestAmount = roundTo(
-      refundableBase * (itRate / 100) * itMonths,
-      2
-    );
-    itInterestFormula = `Refund Base (${formatCurrency(
-      refundableBase,
-      generalSettings.currencySymbol
-    )}) × ${itRate}%/mo × ${itMonths} mos = ${formatCurrency(
-      itInterestAmount,
-      generalSettings.currencySymbol
-    )}`;
-  } else {
-    itInterestAmount = roundTo(
-      refundableBase * (itRate / 100) * (itMonths / 12),
-      2
-    );
-    itInterestFormula = `Refund Base (${formatCurrency(
-      refundableBase,
-      generalSettings.currencySymbol
-    )}) × ${itRate}%/yr × (${itMonths}/12) = ${formatCurrency(
-      itInterestAmount,
-      generalSettings.currencySymbol
-    )}`;
-  }
+  // By default linked (0.5% × 6 = 3%). If flat_3pct is selected, hardcodes to flat 3%
+  const itInterestPercentage =
+    input.itInterestMethod === 'flat_3pct'
+      ? 3.0
+      : roundTo(itMonthlyRate * itMonths, 2);
 
-  // Less Actual IT Liabilities
+  itInterestAmount = roundTo(
+    refundableBase * (itInterestPercentage / 100),
+    2
+  );
+  itInterestFormula = `Excess TDS (${formatCurrency(
+    refundableBase,
+    generalSettings.currencySymbol
+  )}) × ${itInterestPercentage}% (${itMonthlyRate}%/mo × ${itMonths} mos) = ${formatCurrency(
+    itInterestAmount,
+    generalSettings.currencySymbol
+  )}`;
+  const interestPaidByItDept = itInterestAmount;
+
+  // Less: Actual Income Tax Liability
   const actualTaxLiabilities = incomeTax;
-  const actualTaxFormula = `Computed IT on Profit (${taxRate}%) = ${formatCurrency(
+  const actualIncomeTaxLiability = actualTaxLiabilities;
+  const actualTaxFormula = `Income Tax on NP (${taxRate}%) = ${formatCurrency(
     actualTaxLiabilities,
     generalSettings.currencySymbol
   )}`;
 
-  // Net Saving in TDS
-  // Gross TDS recovered - Carrying/opportunity cost + IT refund interest - Actual IT liabilities
-  const netSavingInTds = roundTo(
-    nominalTdsAmount -
-      carryingCostAmount +
-      itInterestAmount -
-      actualTaxLiabilities,
-    2
-  );
+  // Net Saving in TDS = Notional Tax − Interest to Get Refund + Interest Paid by IT Dept − Actual Income Tax Liability
+  // Note on Excel Sheet Swap: If user tests excel_swapped, it computes:
+  // Notional Tax − Interest to Get Refund + Actual Tax Liability − Interest Paid by IT Dept
+  const isSheetSwapped = input.tdsCalculationVariant === 'excel_swapped';
+  const netSavingInTds = isSheetSwapped
+    ? roundTo(
+        notionalTaxComputed -
+          interestToGetTdsRefund +
+          actualIncomeTaxLiability -
+          interestPaidByItDept,
+        2
+      )
+    : roundTo(
+        notionalTaxComputed -
+          interestToGetTdsRefund +
+          interestPaidByItDept -
+          actualIncomeTaxLiability,
+        2
+      );
 
-  // Net Profit = Profit After Tax + Net Saving in TDS
-  // % of Profit After TDS Saving = Net Profit / Selling Price (Freight Charged to Client) * 100
-  const netProfitWithTdsSaving = roundTo(profitAfterTax + netSavingInTds, 2);
-  const netEffectiveProfitWithTds = netProfitWithTdsSaving;
+  // Total Benefit = Profit After Tax + Net Saving in TDS
+  const totalBenefit = roundTo(profitAfterTax + netSavingInTds, 2);
+  const netProfitWithTdsSaving = totalBenefit;
+  const netEffectiveProfitWithTds = totalBenefit;
+
+  // % of Profit After TDS Saving to Sale = Net Saving in TDS ÷ Selling Price
   const percentageOfProfitAfterTdsSaving =
     sellingPrice > 0
-      ? roundTo((netProfitWithTdsSaving / sellingPrice) * 100, 4)
+      ? roundTo((netSavingInTds / sellingPrice) * 100, 4)
+      : 0;
+
+  // % To Sales = ROUND(Total Benefit ÷ Selling Price × 100, 0)
+  const percentToSales =
+    sellingPrice > 0
+      ? Math.round((totalBenefit / sellingPrice) * 100)
       : 0;
 
   const tdsRefund: TdsRefundResult = {
@@ -499,19 +708,41 @@ export function calculateFreightProfit(
     netProfitWithTdsSaving,
     netEffectiveProfitWithTds,
     percentageOfProfitAfterTdsSaving,
-    formulaSummary: `Nominal TDS (${formatCurrency(
-      nominalTdsAmount,
-      generalSettings.currencySymbol
-    )}) − Carrying Cost (${formatCurrency(
-      carryingCostAmount,
-      generalSettings.currencySymbol
-    )}) + IT Interest (${formatCurrency(
-      itInterestAmount,
-      generalSettings.currencySymbol
-    )}) − Tax Liability (${formatCurrency(
-      actualTaxLiabilities,
-      generalSettings.currencySymbol
-    )}) = ${formatCurrency(netSavingInTds, generalSettings.currencySymbol)}`,
+    formulaSummary: isSheetSwapped
+      ? `[Sheet Swapped Formula] Notional TDS (${formatCurrency(
+          notionalTaxComputed,
+          generalSettings.currencySymbol
+        )}) − Carrying Cost (${formatCurrency(
+          interestToGetTdsRefund,
+          generalSettings.currencySymbol
+        )}) + Tax Liability (${formatCurrency(
+          actualIncomeTaxLiability,
+          generalSettings.currencySymbol
+        )}) − IT Interest (${formatCurrency(
+          interestPaidByItDept,
+          generalSettings.currencySymbol
+        )}) = ${formatCurrency(netSavingInTds, generalSettings.currencySymbol)}`
+      : `Notional TDS (${formatCurrency(
+          notionalTaxComputed,
+          generalSettings.currencySymbol
+        )}) − Carrying Cost (${formatCurrency(
+          interestToGetTdsRefund,
+          generalSettings.currencySymbol
+        )}) + IT Interest (${formatCurrency(
+          interestPaidByItDept,
+          generalSettings.currencySymbol
+        )}) − Tax Liability (${formatCurrency(
+          actualIncomeTaxLiability,
+          generalSettings.currencySymbol
+        )}) = ${formatCurrency(netSavingInTds, generalSettings.currencySymbol)}`,
+    refundPeriodMonths: refundMonths,
+    isRefundPeriodComputed: isTdsRefundPeriodComputed,
+    notionalTaxComputed,
+    interestToGetTdsRefund,
+    interestPaidByItDept,
+    actualIncomeTaxLiability,
+    totalBenefit,
+    percentToSales,
   };
 
   // Warnings
@@ -563,5 +794,10 @@ export function calculateFreightProfit(
     isNegativeProfit: profitAfterTax < 0,
     isExpenseExceedingGross: netTotalExpenses > grossProfit,
     allocationSum,
+    creditPeriodDueDate,
+    tdsRefundPeriodMonths,
+    isTdsRefundPeriodComputed,
+    totalBenefit,
+    percentToSales,
   };
 }

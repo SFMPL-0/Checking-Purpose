@@ -152,6 +152,150 @@ export const QuickCalcView: React.FC<QuickCalcViewProps> = ({
         </div>
       </div>
 
+      {/* Trip Dates & Credit Model (P&L Timing) */}
+      <div className="bg-slate-800/90 border border-slate-700/90 rounded-2xl p-5 shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-700/70 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-bold text-white">
+              Trip Timing & Credit Model
+            </h2>
+          </div>
+          <span className="text-[11px] text-slate-400">
+            Drives Credit Period Due Date & TDS Refund Period
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* LR Date */}
+          <div className="bg-slate-900/70 p-3 rounded-xl border border-slate-700/60 space-y-1">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span>LR Date</span>
+              <span className="text-[10px] text-blue-400 font-normal">Trip Date</span>
+            </label>
+            <input
+              type="date"
+              value={input.lrDate || ''}
+              onChange={(e) =>
+                setInput((prev) => ({ ...prev, lrDate: e.target.value }))
+              }
+              className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-2.5 py-1.5 text-xs text-white"
+            />
+          </div>
+
+          {/* Credit Period (Days) */}
+          <div className="bg-slate-900/70 p-3 rounded-xl border border-slate-700/60 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-slate-300">
+                Credit Period (Days)
+              </label>
+              <span className="text-[10px] font-mono text-amber-400 font-bold">
+                {input.creditPeriodDays ?? 20}d
+              </span>
+            </div>
+            <input
+              type="number"
+              min="0"
+              max="365"
+              value={input.creditPeriodDays ?? 20}
+              onChange={(e) => {
+                const days = Math.max(0, parseInt(e.target.value, 10) || 0);
+                setInput((prev) => ({
+                  ...prev,
+                  creditPeriodDays: days,
+                  customDays: days,
+                }));
+              }}
+              className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold"
+            />
+            <div className="flex gap-1 pt-0.5">
+              {[15, 20, 30, 45, 60].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() =>
+                    setInput((prev) => ({
+                      ...prev,
+                      creditPeriodDays: d,
+                      customDays: d,
+                    }))
+                  }
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                    (input.creditPeriodDays ?? 20) === d
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Credit Period Due Date (Auto-calculated) */}
+          <div className="bg-slate-900/70 p-3 rounded-xl border border-blue-500/30 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-300">
+                Credit Period Due Date
+              </span>
+              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-bold">
+                Auto-calculated
+              </span>
+            </div>
+            <div className="text-sm font-black text-cyan-300 font-mono py-1">
+              {result.creditPeriodDueDate || '—'}
+            </div>
+            <p className="text-[10px] text-slate-400">
+              LR Date + {input.creditPeriodDays ?? 20} Days
+            </p>
+          </div>
+
+          {/* Financial Year End Date & TDS Refund Period */}
+          <div className="bg-slate-900/70 p-3 rounded-xl border border-amber-500/30 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-slate-300">
+                FY End Date
+              </label>
+              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                Auto TDS Period
+              </span>
+            </div>
+            <input
+              type="date"
+              value={input.financialYearEndDate || ''}
+              onChange={(e) =>
+                setInput((prev) => ({
+                  ...prev,
+                  financialYearEndDate: e.target.value,
+                }))
+              }
+              className="w-full bg-slate-800 border border-slate-700 focus:border-amber-500 rounded-lg px-2.5 py-1.5 text-xs text-white"
+            />
+            <div className="pt-1 flex items-center justify-between text-[11px]">
+              <span className="text-slate-400">TDS Refund Period:</span>
+              <span className="font-mono font-bold text-amber-300">
+                {result.tdsRefundPeriodMonths !== undefined
+                  ? `${result.tdsRefundPeriodMonths} mos`
+                  : '18 mos'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Validation warning if FY End Date is before LR Date */}
+        {input.lrDate &&
+          input.financialYearEndDate &&
+          input.financialYearEndDate < input.lrDate && (
+            <div className="p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+              <span className="font-bold">⚠️ Warning:</span>
+              <span>
+                Financial Year End Date ({input.financialYearEndDate}) is earlier
+                than LR Date ({input.lrDate}). TDS refund period clamped to 0 months.
+              </span>
+            </div>
+          )}
+      </div>
+
       {/* Main Bottom Line Results Hero Card */}
       <div className="bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 border border-slate-700/90 rounded-3xl p-6 shadow-2xl space-y-5">
         <div className="flex items-center justify-between border-b border-slate-700/80 pb-4">

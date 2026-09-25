@@ -445,6 +445,15 @@ export const HistoryReportsView: React.FC<HistoryReportsViewProps> = ({
                             • {calc.input.fromLocation || '—'} → {calc.input.toLocation || '—'}
                           </span>
                         )}
+                        {calc.input?.lrDate && (
+                          <span className="text-slate-300 font-mono">• LR: {calc.input.lrDate}</span>
+                        )}
+                        {calc.result?.creditPeriodDueDate && (
+                          <span className="text-cyan-300 font-mono">• Due: {calc.result.creditPeriodDueDate}</span>
+                        )}
+                        {calc.result?.tdsRefundPeriodMonths !== undefined && (
+                          <span className="text-amber-300 font-mono">• TDS: {calc.result.tdsRefundPeriodMonths} mos</span>
+                        )}
                         {calc.notes && <span>• {calc.notes}</span>}
                       </div>
                     </div>

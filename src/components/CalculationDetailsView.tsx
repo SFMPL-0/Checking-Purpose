@@ -22,6 +22,7 @@ import { formatCurrency, formatPercent } from '../services/calculationEngine';
 
 interface CalculationDetailsViewProps {
   input: CalculationInput;
+  setInput?: React.Dispatch<React.SetStateAction<CalculationInput>>;
   result: CalculationResult;
   expenses: ExpenseItem[];
   interestTranches: InterestTranche[];
@@ -32,6 +33,7 @@ interface CalculationDetailsViewProps {
 
 export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
   input,
+  setInput,
   result,
   expenses,
   interestTranches,
@@ -65,6 +67,82 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
             <span>Open Engine Settings</span>
           </button>
         </div>
+      </div>
+
+      {/* Trip Timing & Credit Model Schedule */}
+      <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+          <h2 className="text-base font-bold text-white flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 text-xs font-bold flex items-center justify-center">
+              0
+            </span>
+            <span>Trip Timing, Credit Schedule & Statutory Deadlines</span>
+          </h2>
+          <span className="text-xs text-slate-400">Excel Model Calendar Controls</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          {/* LR Date */}
+          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60">
+            <div className="text-slate-400 text-[11px]">LR Date (Lorry Receipt)</div>
+            <div className="text-sm font-bold text-white mt-1 font-mono">
+              {input.lrDate || 'Not specified'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Base dispatch date</div>
+          </div>
+
+          {/* Credit Period & Due Date */}
+          <div className="p-3 bg-slate-900/60 rounded-xl border border-blue-500/40">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-[11px]">Credit Period Due Date</span>
+              <span className="text-[9px] bg-blue-500/20 text-blue-300 font-bold px-1.5 py-0.2 rounded uppercase">
+                Auto
+              </span>
+            </div>
+            <div className="text-sm font-bold text-cyan-300 mt-1 font-mono">
+              {result.creditPeriodDueDate || '—'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              LR Date + {input.creditPeriodDays ?? 20} credit days
+            </div>
+          </div>
+
+          {/* Financial Year End Date */}
+          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60">
+            <div className="text-slate-400 text-[11px]">Financial Year End Date</div>
+            <div className="text-sm font-bold text-white mt-1 font-mono">
+              {input.financialYearEndDate || '31 March'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Company FY closing</div>
+          </div>
+
+          {/* TDS Refund Period */}
+          <div className="p-3 bg-slate-900/60 rounded-xl border border-amber-500/40">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-[11px]">TDS Refund Period</span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.2 rounded uppercase">
+                Auto
+              </span>
+            </div>
+            <div className="text-sm font-bold text-amber-300 mt-1 font-mono">
+              {result.tdsRefundPeriodMonths !== undefined
+                ? `${result.tdsRefundPeriodMonths} Months`
+                : '18 Months'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              ROUND((FY End − LR Date) ÷ 30, 1)
+            </div>
+          </div>
+        </div>
+
+        {input.lrDate &&
+          input.financialYearEndDate &&
+          input.financialYearEndDate < input.lrDate && (
+            <div className="p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-xl text-rose-300 text-xs">
+              ⚠️ Warning: Financial Year End Date ({input.financialYearEndDate}) is earlier
+              than LR Date ({input.lrDate}). TDS refund period cannot be negative (clamped to 0).
+            </div>
+          )}
       </div>
 
       {/* 1. Core Revenue & Gross Profit Card */}
@@ -121,75 +199,77 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Interest Tranches (75% and 25%) */}
-      <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 text-xs font-bold flex items-center justify-center">
-              2
-            </span>
-            <span>Interest Calculations (Split Portions)</span>
-          </h2>
-          <button
-            onClick={() => onNavigateSettings('interest')}
-            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>Edit Interest Tranches</span>
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {result.interestDetails.map((item, idx) => (
-            <div
-              key={item.id}
-              className="bg-slate-900/60 border border-slate-700/70 rounded-xl p-4 space-y-2"
+      {/* 2. Optional Interest Tranches (if custom standalone tranches configured) */}
+      {result.interestDetails.length > 0 && (
+        <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 text-xs font-bold flex items-center justify-center">
+                2
+              </span>
+              <span>Interest Calculations (Split Portions)</span>
+            </h2>
+            <button
+              onClick={() => onNavigateSettings('interest')}
+              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div className="font-semibold text-white text-sm flex items-center gap-2">
-                  <span className="text-indigo-400 font-mono text-xs">#{idx + 1}</span>
-                  <span>{item.name}</span>
-                </div>
-                <div className="text-xs font-mono font-bold text-indigo-300 bg-indigo-950/50 px-2.5 py-1 rounded-md border border-indigo-800/40">
-                  {formatCurrency(item.amount, generalSettings.currencySymbol)}
-                </div>
-              </div>
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Interest Tranches</span>
+            </button>
+          </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-400 pt-1">
-                <div>
-                  <span className="text-slate-500">Allocation:</span>{' '}
-                  <span className="text-slate-300 font-semibold">{item.allocationPercent}%</span>
+          <div className="space-y-3">
+            {result.interestDetails.map((item, idx) => (
+              <div
+                key={item.id}
+                className="bg-slate-900/60 border border-slate-700/70 rounded-xl p-4 space-y-2"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div className="font-semibold text-white text-sm flex items-center gap-2">
+                    <span className="text-indigo-400 font-mono text-xs">#{idx + 1}</span>
+                    <span>{item.name}</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-indigo-300 bg-indigo-950/50 px-2.5 py-1 rounded-md border border-indigo-800/40">
+                    {formatCurrency(item.amount, generalSettings.currencySymbol)}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-500">Principal Base:</span>{' '}
-                  <span className="text-slate-300 font-semibold">{formatCurrency(item.principal, generalSettings.currencySymbol)}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Interest Rate:</span>{' '}
-                  <span className="text-slate-300 font-semibold">{item.rate}% {item.isDailyRate ? 'Daily' : 'Annual'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Days:</span>{' '}
-                  <span className="text-slate-300 font-semibold">{item.days} / {item.daysInYear}</span>
-                </div>
-              </div>
 
-              <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-xs font-mono text-slate-300">
-                <span className="text-slate-500">Formula:</span> {item.formulaString}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-400 pt-1">
+                  <div>
+                    <span className="text-slate-500">Allocation:</span>{' '}
+                    <span className="text-slate-300 font-semibold">{item.allocationPercent}%</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Principal Base:</span>{' '}
+                    <span className="text-slate-300 font-semibold">{formatCurrency(item.principal, generalSettings.currencySymbol)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Interest Rate:</span>{' '}
+                    <span className="text-slate-300 font-semibold">{item.rate}% {item.isDailyRate ? 'Daily' : 'Annual'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Days:</span>{' '}
+                    <span className="text-slate-300 font-semibold">{item.days} / {item.daysInYear}</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-xs font-mono text-slate-300">
+                  <span className="text-slate-500">Formula:</span> {item.formulaString}
+                </div>
               </div>
+            ))}
+
+            <div className="flex justify-between items-center bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-3 px-4">
+              <span className="text-xs font-bold text-slate-200">
+                Total Interest Financing Expense:
+              </span>
+              <span className="text-sm font-black text-indigo-300 font-mono">
+                {formatCurrency(result.totalInterest, generalSettings.currencySymbol)}
+              </span>
             </div>
-          ))}
-
-          <div className="flex justify-between items-center bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-3 px-4">
-            <span className="text-xs font-bold text-slate-200">
-              Total Interest Financing Expense:
-            </span>
-            <span className="text-sm font-black text-indigo-300 font-mono">
-              {formatCurrency(result.totalInterest, generalSettings.currencySymbol)}
-            </span>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Operating & Statutory Expenses */}
       <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-4">
@@ -379,8 +459,15 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
           {/* Carrying Cost to get refund */}
           <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 flex justify-between items-center">
             <div>
-              <div className="font-semibold text-amber-300">
-                Less Interest for {tdsSettings.refundCarryingPeriodMonths} Months @ {tdsSettings.refundCarryingRate}% to Get Refund
+              <div className="font-semibold text-amber-300 flex items-center gap-1.5 flex-wrap">
+                <span>
+                  Less Interest for {result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} Months @ {tdsSettings.refundCarryingRate}% to Get Refund
+                </span>
+                {result.isTdsRefundPeriodComputed && (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded">
+                    Auto: (FY End − LR) ÷ 30
+                  </span>
+                )}
               </div>
               <div className="text-slate-400 font-mono text-[11px]">
                 {result.tdsRefund.carryingCostFormula}
@@ -406,16 +493,100 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
             </div>
           </div>
 
-          {/* Actual IT Liabilities */}
+          {/* Less Actual Income Tax Liability */}
           <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 flex justify-between items-center">
             <div>
-              <div className="font-semibold text-slate-300">Less Actual IT Liabilities</div>
+              <div className="font-semibold text-slate-300">Less: Actual Income Tax Liability</div>
               <div className="text-slate-400 font-mono text-[11px]">
                 {result.tdsRefund.actualTaxFormula}
               </div>
             </div>
             <div className="font-mono font-bold text-rose-400">
               −{formatCurrency(result.tdsRefund.actualTaxLiabilities, generalSettings.currencySymbol)}
+            </div>
+          </div>
+
+          {/* Interactive Formula Verification Callouts for the two ⚠️ items */}
+          <div className="p-3.5 bg-slate-950/80 border border-amber-500/40 rounded-xl space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                <span>⚠️ Formula Verification & Assumptions Options</span>
+              </span>
+              <span className="text-[10px] text-slate-400">Excel Model Variations</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              {/* Variation 1: Flat 3% vs Linked IT Interest */}
+              <div className="p-2.5 bg-slate-900/90 rounded-lg border border-slate-700 space-y-1.5">
+                <div className="font-semibold text-slate-200 text-[11px]">
+                  1. IT Dept Interest Computation
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Current worksheet hardcodes 3.0%, while assumption fields specify {tdsSettings.itInterestRate}%/mo × {tdsSettings.itInterestPeriodMonths} mos = {(Number(tdsSettings.itInterestRate) * Number(tdsSettings.itInterestPeriodMonths)).toFixed(1)}%.
+                </p>
+                {setInput && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, itInterestMethod: 'linked' }))}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                        (input.itInterestMethod ?? 'linked') === 'linked'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Linked (Rate × Months)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, itInterestMethod: 'flat_3pct' }))}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                        input.itInterestMethod === 'flat_3pct'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Flat 3.0% (Sheet Hardcoded)
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Variation 2: Net Saving Formula Order (Swapped vs Standard) */}
+              <div className="p-2.5 bg-slate-900/90 rounded-lg border border-slate-700 space-y-1.5">
+                <div className="font-semibold text-slate-200 text-[11px]">
+                  2. Net Saving Sign / Order
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Worksheet row labels show: Notional − Carrying + IT Interest − Tax Liab. But cell formula had the last two terms inverted.
+                </p>
+                {setInput && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, tdsCalculationVariant: 'standard' }))}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                        (input.tdsCalculationVariant ?? 'standard') === 'standard'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Standard (− Tax + IT Int)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, tdsCalculationVariant: 'excel_swapped' }))}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                        input.tdsCalculationVariant === 'excel_swapped'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Excel Swapped (+ Tax − IT Int)
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -432,50 +603,93 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
             </div>
           </div>
 
-          {/* Net Profit = Profit After Tax + Net Saving in TDS */}
-          <div className="bg-emerald-950/30 p-4 rounded-xl border border-emerald-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+          {/* % of Profit After TDS Saving to Sale */}
+          <div className="bg-cyan-950/30 p-3.5 rounded-xl border border-cyan-500/40 flex justify-between items-center">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-emerald-300 text-sm">
-                  Net Profit (After TDS Saving)
-                </span>
-                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  PAT + Net Saving in TDS
-                </span>
+              <div className="font-semibold text-cyan-300 text-xs">
+                % of Profit After TDS Saving to Sale
               </div>
-              <div className="text-slate-300 font-mono text-[11px] mt-1">
-                Net Profit Before Tax ({formatCurrency(result.netProfitBeforeTax, generalSettings.currencySymbol)}) + Net Saving in TDS ({formatCurrency(result.tdsRefund.netSavingInTds, generalSettings.currencySymbol)}) = {formatCurrency(result.tdsRefund.netProfitWithTdsSaving, generalSettings.currencySymbol)}
+              <div className="text-slate-400 font-mono text-[11px] mt-0.5">
+                Net Saving in TDS ({formatCurrency(result.tdsRefund.netSavingInTds, generalSettings.currencySymbol)}) ÷ Selling Price ({formatCurrency(result.sellingPrice, generalSettings.currencySymbol)})
               </div>
             </div>
-            <div className="text-left sm:text-right">
-              <div className="font-mono font-black text-xl text-emerald-300">
-                {formatCurrency(result.tdsRefund.netProfitWithTdsSaving, generalSettings.currencySymbol)}
-              </div>
+            <div className="font-mono font-black text-sm text-cyan-300">
+              {formatPercent(result.percentageOfProfitAfterTdsSaving, 2)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. SUMMARY (Matching Excel Worksheet Exactly) */}
+      <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center justify-center">
+              6
+            </span>
+            <h2 className="text-base font-bold text-white">
+              Summary (Excel Worksheet Output)
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">Row 6 P&L Totals</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Profit After Tax */}
+          <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-700/80 space-y-1">
+            <div className="text-slate-400 text-xs font-medium">Profit After Tax (PAT)</div>
+            <div
+              className={`text-xl font-black font-mono mt-1 ${
+                result.profitAfterTax >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {formatCurrency(result.profitAfterTax, generalSettings.currencySymbol)}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              NPBT − Income Tax ({result.incomeTaxRate}%)
             </div>
           </div>
 
-          {/* % of Profit After TDS Saving = Net Profit / Selling Price * 100 */}
-          <div className="bg-cyan-950/30 p-4 rounded-xl border border-cyan-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-cyan-300 text-sm">
-                  % of Profit After TDS Saving
-                </span>
-                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold">
-                  Net Profit / Selling Price × 100
-                </span>
-              </div>
-              <div className="text-slate-300 font-mono text-[11px] mt-1">
-                Net Profit ({formatCurrency(result.tdsRefund.netProfitWithTdsSaving, generalSettings.currencySymbol)}) ÷ Selling Price ({formatCurrency(result.sellingPrice, generalSettings.currencySymbol)}) × 100 = {result.tdsRefund.percentageOfProfitAfterTdsSaving.toFixed(2)}%
-              </div>
+          {/* Net Saving in TDS */}
+          <div className="bg-slate-900/80 p-4 rounded-xl border border-amber-500/30 space-y-1">
+            <div className="text-slate-400 text-xs font-medium">Net Saving in TDS</div>
+            <div className="text-xl font-black font-mono text-amber-300 mt-1">
+              {formatCurrency(result.tdsRefund.netSavingInTds, generalSettings.currencySymbol)}
             </div>
-            <div className="text-left sm:text-right">
-              <div className="font-mono font-black text-xl text-cyan-300">
-                {result.tdsRefund.percentageOfProfitAfterTdsSaving.toFixed(2)}%
-              </div>
-              <div className="text-xs font-semibold text-cyan-400">
-                Profit Margin on Freight Charged to Client
-              </div>
+            <div className="text-[10px] text-slate-500">
+              From Section 5 statutory matrix
+            </div>
+          </div>
+
+          {/* Total Benefit = Profit After Tax + Net Saving in TDS */}
+          <div className="bg-emerald-950/40 p-4 rounded-xl border border-emerald-500/50 space-y-1 shadow-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-emerald-300 text-xs font-bold">Total Benefit</span>
+              <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                PAT + Net Saving
+              </span>
+            </div>
+            <div className="text-2xl font-black font-mono text-emerald-300 mt-1">
+              {formatCurrency(result.totalBenefit ?? (result.profitAfterTax + result.tdsRefund.netSavingInTds), generalSettings.currencySymbol)}
+            </div>
+            <div className="text-[10px] text-emerald-400/80">
+              Complete bottom-line financial yield
+            </div>
+          </div>
+
+          {/* % To Sales = ROUND(Total Benefit ÷ Selling Price × 100, 0) */}
+          <div className="bg-cyan-950/40 p-4 rounded-xl border border-cyan-500/50 space-y-1 shadow-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-cyan-300 text-xs font-bold">% To Sales</span>
+              <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold">
+                Rounded
+              </span>
+            </div>
+            <div className="text-2xl font-black font-mono text-cyan-300 mt-1">
+              {result.percentToSales ?? (result.sellingPrice > 0 ? Math.round(((result.totalBenefit ?? 0) / result.sellingPrice) * 100) : 0)}%
+            </div>
+            <div className="text-[10px] text-cyan-400/80">
+              ROUND(Total Benefit ÷ SP × 100, 0)
             </div>
           </div>
         </div>

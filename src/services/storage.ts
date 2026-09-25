@@ -37,6 +37,8 @@ import {
   DEFAULT_INTEREST_TRANCHES,
   DEFAULT_TDS_SETTINGS,
   calculateFreightProfit,
+  ensureDefaultExpenses,
+  getDefaultFinancialYearEndDate,
   roundTo,
 } from './calculationEngine';
 import { APP_STATE_KEYS, supabase, TABLES } from './supabaseClient';
@@ -222,11 +224,36 @@ export async function loadAllAppState(): Promise<AppState> {
     }
   });
 
+  const rawInput = kv.get(APP_STATE_KEYS.INPUT) ?? getLocalItem(APP_STATE_KEYS.INPUT, DEFAULT_INPUT);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const hydratedInput: CalculationInput = {
+    ...DEFAULT_INPUT,
+    ...rawInput,
+    lrDate: rawInput?.lrDate || todayStr,
+    financialYearEndDate:
+      rawInput?.financialYearEndDate ||
+      getDefaultFinancialYearEndDate(rawInput?.lrDate || todayStr),
+    creditPeriodDays:
+      rawInput?.creditPeriodDays !== undefined
+        ? rawInput.creditPeriodDays
+        : rawInput?.customDays ?? 30,
+  };
+
+  const loadedExpenses = kv.get(APP_STATE_KEYS.EXPENSES) ?? getLocalItem(APP_STATE_KEYS.EXPENSES, DEFAULT_EXPENSES);
+  const hydratedExpenses = ensureDefaultExpenses(loadedExpenses);
+
+  const rawInterest =
+    kv.get(APP_STATE_KEYS.INTEREST) ?? getLocalItem(APP_STATE_KEYS.INTEREST, DEFAULT_INTEREST_TRANCHES);
+  const cleanInterestTranches = (Array.isArray(rawInterest) ? rawInterest : []).filter(
+    (t: any) => t.id !== 'int-75' && t.id !== 'int-25' && !t.name?.includes('75%') && !t.name?.includes('25%')
+  );
+  // Persist cleaned tranches back to local storage so legacy items don't reappear
+  setLocalItem(APP_STATE_KEYS.INTEREST, cleanInterestTranches);
+
   return {
-    input: kv.get(APP_STATE_KEYS.INPUT) ?? getLocalItem(APP_STATE_KEYS.INPUT, DEFAULT_INPUT),
-    expenses: kv.get(APP_STATE_KEYS.EXPENSES) ?? getLocalItem(APP_STATE_KEYS.EXPENSES, DEFAULT_EXPENSES),
-    interestTranches:
-      kv.get(APP_STATE_KEYS.INTEREST) ?? getLocalItem(APP_STATE_KEYS.INTEREST, DEFAULT_INTEREST_TRANCHES),
+    input: hydratedInput,
+    expenses: hydratedExpenses,
+    interestTranches: cleanInterestTranches,
     tdsSettings: kv.get(APP_STATE_KEYS.TDS) ?? getLocalItem(APP_STATE_KEYS.TDS, DEFAULT_TDS_SETTINGS),
     generalSettings: kv.get(APP_STATE_KEYS.GENERAL) ?? getLocalItem(APP_STATE_KEYS.GENERAL, DEFAULT_GENERAL_SETTINGS),
     scenarios: kv.get(APP_STATE_KEYS.SCENARIOS) ?? getLocalItem(APP_STATE_KEYS.SCENARIOS, DEFAULT_SCENARIOS),
@@ -258,6 +285,17 @@ function rowToSavedCalculation(row: any): SavedCalculation {
     input.buyingPrice = row.result.buyingPrice;
   }
 
+  // Restore lrDate, financialYearEndDate, creditPeriodDays
+  if (!input.lrDate) {
+    input.lrDate = (row.created_at ? new Date(row.created_at) : new Date()).toISOString().slice(0, 10);
+  }
+  if (!input.financialYearEndDate) {
+    input.financialYearEndDate = getDefaultFinancialYearEndDate(input.lrDate);
+  }
+  if (input.creditPeriodDays === undefined) {
+    input.creditPeriodDays = input.customDays ?? 20;
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -266,8 +304,10 @@ function rowToSavedCalculation(row: any): SavedCalculation {
     tripNumber: row.trip_number || input.tripNumber || '',
     notes: row.notes || input.notes || '',
     input,
-    expenses: row.expenses,
-    interestTranches: row.interest_tranches,
+    expenses: ensureDefaultExpenses(row.expenses),
+    interestTranches: (Array.isArray(row.interest_tranches) ? row.interest_tranches : []).filter(
+      (t: any) => t.id !== 'int-75' && t.id !== 'int-25' && !t.name?.includes('75%') && !t.name?.includes('25%')
+    ),
     tdsSettings: row.tds_settings,
     generalSettings: row.general_settings,
     result: row.result,
