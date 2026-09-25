@@ -566,7 +566,7 @@ export function calculateFreightProfit(
     }
   }
 
-  // Less: Interest to Get TDS Refund = Notional Tax × tdsRefundInterestRateMonthly × tdsRefundPeriodMonths
+  // Less: Interest to Get TDS Refund = (TDS 2% − Income Tax 27%) × tdsRefundInterestRateMonthly × tdsRefundPeriodMonths
   const refundRate =
     input.tdsRefundInterestRateMonthly !== undefined &&
     !isNaN(Number(input.tdsRefundInterestRateMonthly))
@@ -574,17 +574,25 @@ export function calculateFreightProfit(
       : Number(tdsSettings.refundCarryingRate) || 1.5;
 
   const refundMonths = tdsRefundPeriodMonths;
+  // Base for refund carrying cost is (TDS 2% − Income Tax 27%)
+  const carryingCostBase = Math.max(0, nominalTdsAmount - incomeTax);
   let carryingCostAmount = 0;
   let carryingCostFormula = '';
 
   if (tdsSettings.refundCarryingMode === 'monthly') {
-    // refundRate% per month for refundMonths
+    // refundRate% per month for refundMonths on (TDS - Income Tax)
     carryingCostAmount = roundTo(
-      nominalTdsAmount * (refundRate / 100) * refundMonths,
+      carryingCostBase * (refundRate / 100) * refundMonths,
       2
     );
-    carryingCostFormula = `Notional Tax (${formatCurrency(
+    carryingCostFormula = `(TDS [${formatCurrency(
       nominalTdsAmount,
+      generalSettings.currencySymbol
+    )}] − IT [${formatCurrency(
+      incomeTax,
+      generalSettings.currencySymbol
+    )}] = ${formatCurrency(
+      carryingCostBase,
       generalSettings.currencySymbol
     )}) × ${refundRate}%/mo × ${refundMonths} mos = ${formatCurrency(
       carryingCostAmount,
@@ -592,20 +600,32 @@ export function calculateFreightProfit(
     )}`;
   } else if (tdsSettings.refundCarryingMode === 'annual') {
     carryingCostAmount = roundTo(
-      nominalTdsAmount * (refundRate / 100) * (refundMonths / 12),
+      carryingCostBase * (refundRate / 100) * (refundMonths / 12),
       2
     );
-    carryingCostFormula = `Notional Tax (${formatCurrency(
+    carryingCostFormula = `(TDS [${formatCurrency(
       nominalTdsAmount,
+      generalSettings.currencySymbol
+    )}] − IT [${formatCurrency(
+      incomeTax,
+      generalSettings.currencySymbol
+    )}] = ${formatCurrency(
+      carryingCostBase,
       generalSettings.currencySymbol
     )}) × ${refundRate}%/yr × (${refundMonths}/12) = ${formatCurrency(
       carryingCostAmount,
       generalSettings.currencySymbol
     )}`;
   } else {
-    carryingCostAmount = roundTo(nominalTdsAmount * (refundRate / 100), 2);
-    carryingCostFormula = `Notional Tax (${formatCurrency(
+    carryingCostAmount = roundTo(carryingCostBase * (refundRate / 100), 2);
+    carryingCostFormula = `(TDS [${formatCurrency(
       nominalTdsAmount,
+      generalSettings.currencySymbol
+    )}] − IT [${formatCurrency(
+      incomeTax,
+      generalSettings.currencySymbol
+    )}] = ${formatCurrency(
+      carryingCostBase,
       generalSettings.currencySymbol
     )}) × ${refundRate}% = ${formatCurrency(
       carryingCostAmount,

@@ -77,7 +77,7 @@ export function exportCalculationToExcel(
     ['6. TDS CLAIM & REFUND COMPUTATION', 'AMOUNT (INR)'],
     ['Nominal TDS Deducted (2% on SP)', result.tdsRefund.nominalTdsAmount],
     [
-      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
+      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}% on TDS − IT)`,
       -result.tdsRefund.carryingCostAmount,
     ],
     [
@@ -519,7 +519,7 @@ export async function exportCalculationToPdf(
       formatCurrency(result.tdsRefund.nominalTdsAmount, generalSettings.currencySymbol),
     ],
     [
-      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}%)`,
+      `Less: Carrying Cost (${result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} mos @ ${tdsSettings.refundCarryingRate}% on TDS − IT)`,
       'Financing cost during refund hold period',
       `-${formatCurrency(result.tdsRefund.carryingCostAmount, generalSettings.currencySymbol)}`,
     ],

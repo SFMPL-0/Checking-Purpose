@@ -461,7 +461,7 @@ export const CalculationDetailsView: React.FC<CalculationDetailsViewProps> = ({
             <div>
               <div className="font-semibold text-amber-300 flex items-center gap-1.5 flex-wrap">
                 <span>
-                  Less Interest for {result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} Months @ {tdsSettings.refundCarryingRate}% to Get Refund
+                  Less: Interest for {result.tdsRefundPeriodMonths ?? tdsSettings.refundCarryingPeriodMonths} Months @ {tdsSettings.refundCarryingRate}% to Get Refund (on TDS − Income Tax)
                 </span>
                 {result.isTdsRefundPeriodComputed && (
                   <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded">
